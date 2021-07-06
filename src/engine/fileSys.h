@@ -1,8 +1,6 @@
 #pragma once
 
 #include "utils/settings.h"
-#include <archive.h>
-#include <archive_entry.h>
 #include <fstream>
 
 /* For interpreting lines in ini files:
@@ -19,13 +17,13 @@ public:
 		title		// title, no everything else
 	};
 private:
-	Type type;
+	Type type = Type::empty;
 	string prp;	// property, aka. the thing before the equal sign/brackets
 	string key;	// the thing between the brackets (empty if there are no brackets)
 	string val;	// value, aka. the thing after the equal sign
 
 public:
-	IniLine();
+	IniLine() = default;
 	IniLine(const string& line);
 
 	Type getType() const;
@@ -42,10 +40,6 @@ public:
 	template <class P, class... T> static void writeVal(std::ofstream& ss, P&& prp, T&&... val);
 	template <class P, class K, class... T> static void writeKeyVal(std::ofstream& ss, P&& prp, K&& key, T&&... val);
 };
-
-inline IniLine::IniLine() :
-	type(Type::empty)
-{}
 
 inline IniLine::IniLine(const string& line) {
 	setLine(line);
@@ -85,27 +79,6 @@ void IniLine::writeKeyVal(std::ofstream& ss, P&& prp, K&& key, T&&... val) {
 // handles all filesystem interactions
 class FileSys {
 public:
-	static constexpr array<SDL_Color, sizet(Color::texture)+1> defaultColors = {
-		SDL_Color{ 10, 10, 10, 255 },		// background
-		SDL_Color{ 90, 90, 90, 255 },		// normal
-		SDL_Color{ 60, 60, 60, 255 },		// dark
-		SDL_Color{ 120, 120, 120, 255 },	// light
-		SDL_Color{ 105, 105, 105, 255 },	// select
-		SDL_Color{ 75, 75, 75, 255 },		// tooltip
-		SDL_Color{ 210, 210, 210, 255 },	// text
-		SDL_Color{ 210, 210, 210, 255 }		// texture
-	};
-	static constexpr array<const char*, defaultColors.size()> colorNames = {
-		"background",
-		"normal",
-		"dark",
-		"light",
-		"select",
-		"tooltip",
-		"text",
-		"texture"
-	};
-
 	static constexpr char extIni[] = ".ini";
 private:
 	static constexpr char defaultFrMode[] = "rb";
@@ -118,9 +91,6 @@ private:
 		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
 	};
 	static constexpr sizet drivesMax = 26;
-	static constexpr sizet fnameMax = 255;
-#else
-	static constexpr sizet fnameMax = NAME_MAX;
 #endif
 	static constexpr char fileThemes[] = "themes.ini";
 	static constexpr char fileSettings[] = "settings.ini";
@@ -155,13 +125,12 @@ private:
 	fs::path dirBase;	// application base directory
 	fs::path dirSets;	// settings directory
 	fs::path dirConfs;	// internal config directory
-	fs::path dirIcons;	// icon directory
-	vector<fs::path> dirFonts;	// os's font directories
+	array<fs::path, 2> dirFonts;	// os's font directories
 public:
 	FileSys();
 
 	vector<string> getAvailableThemes() const;
-	array<SDL_Color, defaultColors.size()> loadColors(const string& theme) const;	// updates settings' colors according to settings' theme
+	array<SDL_Color, Settings::defaultColors.size()> loadColors(const string& theme) const;	// updates settings' colors according to settings' theme
 	bool getLastPage(const string& book, string& drc, string& fname) const;
 	bool saveLastPage(const string& book, const string& drc, const string& fname) const;
 	Settings* loadSettings() const;
@@ -185,9 +154,9 @@ public:
 	static mapFiles listArchivePictures(const fs::path& file, vector<string>& names);
 	static SDL_Surface* loadArchivePicture(archive* arch, archive_entry* entry);
 
-	static int moveContentThreaded(void* data);	// moves files from one directory to another (data points to a thread and the thread's data is a pair of strings; src, dst)
+	static void moveContentThreaded(bool* running, fs::path src, fs::path dst);
 	const fs::path& getDirSets() const;
-	const fs::path& getDirIcons() const;
+	fs::path dirIcons() const;
 	string windowIconPath() const;
 
 private:
@@ -196,6 +165,7 @@ private:
 	static bool writeTextFile(const fs::path& file, const vector<string>& lines);
 	static SDL_Color readColor(const string& line);
 
+	template <sizet N> static fs::path searchFontDirs(const string& font, const array<fs::path, N>& dirs);
 #ifdef _WIN32
 	static vector<fs::path> listDrives();
 #endif
@@ -205,14 +175,14 @@ inline const fs::path& FileSys::getDirSets() const {
 	return dirSets;
 }
 
-inline const fs::path& FileSys::getDirIcons() const {
-	return dirIcons;
+inline fs::path FileSys::dirIcons() const {
+	return dirConfs / "icons";
 }
 
 inline string FileSys::windowIconPath() const {
 #if defined(__WIN32) || defined(APPIMAGE)
 	return (dirBase / "vertiread.png").u8string();
 #else
-	return (dirBase / "share/vertiread.png").u8string();
+	return (dirConfs / "vertiread.png").u8string();
 #endif
 }

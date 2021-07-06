@@ -3,6 +3,8 @@
 #include <windows.h>
 #endif
 
+// GENERAL
+
 void pushEvent(UserCode code, void* data1, void* data2) {
 	SDL_Event event;
 	event.user = { SDL_USEREVENT, SDL_GetTicks(), 0, int32(code), data1, data2 };
@@ -24,32 +26,19 @@ Rect Rect::crop(const Rect& rect) {
 	return crop;
 }
 
-Thread::Thread(int (*func)(void*), void* pdata) :
-	data(pdata)
-{
-	start(func);
-}
+// TEXTURE
 
-bool Thread::start(int (*func)(void*)) {
-	run = true;
-	proc = SDL_CreateThread(func, "", this);
-	if (!proc)
-		run = false;
-	return run;
-}
+Texture::Texture(string&& tname, SDL_Texture* texture) :
+	name(std::move(tname)),
+	tex(texture)
+{}
 
-int Thread::finish() {
-	run = false;
-	int res;
-	SDL_WaitThread(proc, &res);
-	proc = nullptr;
-	return res;
-}
+// FILES AND STRINGS
 
 bool isDriveLetter(const fs::path& path) {
 	const fs::path::value_type* p = path.c_str();
 	if (isalpha(p[0]) && p[1] == ':') {
-		for (p += 2; isDsep(*p); p++);
+		for (p += 2; isDsep(*p); ++p);
 		return !*p;
 	}
 	return false;
@@ -58,7 +47,7 @@ bool isDriveLetter(const fs::path& path) {
 fs::path parentPath(const fs::path& path) {
 #ifdef _WIN32
 	if (isDriveLetter(path))
-		return topDir;
+		return fs::path();
 #endif
 	const fs::path::value_type* p = path.c_str();
 	if (sizet len = std::char_traits<fs::path::value_type>::length(p); len && isDsep(p[--len])) {
@@ -70,7 +59,7 @@ fs::path parentPath(const fs::path& path) {
 }
 
 string strEnclose(string str) {
-	for (sizet i = 0; i < str.length(); i++)
+	for (sizet i = 0; i < str.length(); ++i)
 		if (str[i] == '"')
 			str.insert(str.begin() + i++, '\\');
 	return '"' + str + '"';
@@ -85,7 +74,7 @@ vector<string> strUnenclose(const string& str) {
 
 		// find start's end
 		sizet end = ++pos;
-		for (;; end++)
+		for (;; ++end)
 			if (end = str.find_first_of('"', end); end == string::npos || str[end-1] != '\\')
 				break;
 		if (end >= str.length())
@@ -104,13 +93,13 @@ vector<string> strUnenclose(const string& str) {
 
 vector<string> getWords(const string& str) {
 	sizet i;
-	for (i = 0; isSpace(str[i]); i++);
+	for (i = 0; isSpace(str[i]); ++i);
 
 	vector<string> words;
 	for (sizet start; str[i];) {
-		for (start = i; notSpace(str[i]); i++);
+		for (start = i; notSpace(str[i]); ++i);
 		words.emplace_back(str, start, i - start);
-		for (; isSpace(str[i]); i++);
+		for (; isSpace(str[i]); ++i);
 	}
 	return words;
 }
@@ -120,7 +109,7 @@ string cwtos(const wchar* src) {
 	int len = WideCharToMultiByte(CP_UTF8, 0, src, -1, nullptr, 0, nullptr, nullptr);
 	if (len <= 1)
 		return string();
-	len--;
+	--len;
 
 	string dst;
 	dst.resize(len);
@@ -143,7 +132,7 @@ wstring cstow(const char* src) {
 	int len = MultiByteToWideChar(CP_UTF8, 0, src, -1, nullptr, 0);
 	if (len <= 1)
 		return wstring();
-	len--;
+	--len;
 
 	wstring dst;
 	dst.resize(len);

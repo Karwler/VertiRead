@@ -1,8 +1,14 @@
-#include "windowSys.h"
+#include "fileSys.h"
+#include "drawSys.h"
 #include "utils/compare.h"
+#include <archive.h>
+#include <archive_entry.h>
 #include <queue>
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <dlfcn.h>
+#include <fontconfig/fontconfig.h>
 #endif
 
 // INI LINE
@@ -74,13 +80,11 @@ FileSys::FileSys() {
 #ifdef _WIN32
 	dirSets = fs::path(_wgetenv(L"AppData")) / L"VertiRead";
 	dirConfs = dirBase;
-	dirIcons = dirBase / L"icons";
-	dirFonts = { dirBase, fs::path(_wgetenv(L"SystemDrive")) / L"Windows\\Fonts" };
+	dirFonts = { dirBase, fs::path(_wgetenv(L"SystemDrive")) / L"\\Windows\\Fonts" };
 #else
-	dirSets = fs::u8path(getenv("HOME")) / ".vertiread";
-	dirConfs = dirBase / "share";
-	dirIcons = dirBase / "share/icons";
-	dirFonts = { dirBase / "share/fonts", fs::u8path(getenv("HOME")) / ".fonts", fs::u8path("/usr/share/fonts/") };
+	dirSets = fs::u8path(getenv("HOME")) / ".local/share/vertiread";
+	dirConfs = dirBase / "share/vertiread";
+	dirFonts = { fs::u8path(getenv("HOME")) / ".fonts", fs::u8path("/usr/share/fonts") };
 #endif
 
 	// check if all (more or less) necessary files and directories exist
@@ -91,7 +95,7 @@ FileSys::FileSys() {
 		std::cerr << err.what() << std::endl;
 	}
 	try {
-		if (!fs::is_directory(dirIcons))
+		if (!fs::is_directory(dirIcons()))
 			throw std::runtime_error("failed to find icons directory");
 		if (!fs::is_regular_file(dirConfs / fileThemes))
 			throw std::runtime_error("failed to find themes file");
@@ -102,15 +106,21 @@ FileSys::FileSys() {
 
 vector<string> FileSys::getAvailableThemes() const {
 	vector<string> themes;
-	for (IniLine il : readFileLines(dirConfs / fileThemes))
+	vector<string> lines = readFileLines(dirSets / fileThemes, false);
+	if (lines.empty())
+		lines = readFileLines(dirConfs / fileThemes);
+
+	for (IniLine il : lines)
 		if (il.getType() == IniLine::Type::title)
 			themes.push_back(il.getPrp());
 	return !themes.empty() ? themes : vector<string>{ "default" };
 }
 
-array<SDL_Color, FileSys::defaultColors.size()> FileSys::loadColors(const string& theme) const {
-	array<SDL_Color, defaultColors.size()> colors = defaultColors;
-	vector<string> lines = readFileLines(dirConfs / fileThemes);
+array<SDL_Color, Settings::defaultColors.size()> FileSys::loadColors(const string& theme) const {
+	array<SDL_Color, Settings::defaultColors.size()> colors = Settings::defaultColors;
+	vector<string> lines = readFileLines(dirSets / fileThemes, false);
+	if (lines.empty())
+		lines = readFileLines(dirConfs / fileThemes);
 
 	IniLine il;	// find title equal to theme and read colors until the end of the file or another title
 	vector<string>::iterator it = std::find_if(lines.begin(), lines.end(), [&il, theme](const string& ln) -> bool { return il.setLine(ln) == IniLine::Type::title && il.getPrp() == theme; });
@@ -121,7 +131,7 @@ array<SDL_Color, FileSys::defaultColors.size()> FileSys::loadColors(const string
 		if (il.setLine(*it) == IniLine::Type::title)
 			break;
 		if (il.getType() == IniLine::Type::prpVal)
-			if (sizet cid = strToEnum<sizet>(colorNames, il.getPrp()); cid < colors.size())
+			if (sizet cid = strToEnum<sizet>(Settings::colorNames, il.getPrp()); cid < colors.size())
 				colors[cid] = readColor(il.getVal());
 	}
 	return colors;
@@ -198,7 +208,7 @@ void FileSys::saveSettings(const Settings* sets) const {
 	IniLine::writeVal(ofh, iniKeywordFullscreen, btos(sets->fullscreen));
 	IniLine::writeVal(ofh, iniKeywordResolution, sets->resolution.x, ' ', sets->resolution.y);
 	IniLine::writeVal(ofh, iniKeywordZoom, sets->zoom);
-	IniLine::writeVal(ofh, iniKeywordPictureLimit, PicLim::names[uint8(sets->picLim.type)], ' ', sets->picLim.getCount(), ' ', memoryString(sets->picLim.getSize()));
+	IniLine::writeVal(ofh, iniKeywordPictureLimit, PicLim::names[uint8(sets->picLim.type)], ' ', sets->picLim.getCount(), ' ', PicLim::memoryString(sets->picLim.getSize()));
 	IniLine::writeVal(ofh, iniKeywordSpacing, sets->spacing);
 	IniLine::writeVal(ofh, iniKeywordDirection, Direction::names[uint8(sets->direction)]);
 	IniLine::writeVal(ofh, iniKeywordFont, sets->font);
@@ -212,7 +222,7 @@ void FileSys::saveSettings(const Settings* sets) const {
 
 array<Binding, Binding::names.size()> FileSys::getBindings() const {
 	array<Binding, Binding::names.size()> bindings;
-	for (sizet i = 0; i < bindings.size(); i++)
+	for (sizet i = 0; i < bindings.size(); ++i)
 		bindings[i].reset(Binding::Type(i));
 
 	for (IniLine il : readFileLines(dirSets / fileBindings, false)) {
@@ -231,18 +241,21 @@ array<Binding, Binding::names.size()> FileSys::getBindings() const {
 			break;
 		case keyHat[0]:			// joystick hat
 			if (sizet id = sizet(std::find_if(il.getVal().begin() + 2, il.getVal().end(), [](char c) -> bool { return !isdigit(c); }) - il.getVal().begin()); id < il.getVal().size())
-				bindings[bid].setJhat(uint8(sstoul(il.getVal().substr(2, id-2))), strToVal(KeyGetter::hatNames, il.getVal().substr(id+1)));
+				bindings[bid].setJhat(uint8(sstoul(il.getVal().substr(2, id-2))), strToVal(Binding::hatNames, il.getVal().substr(id+1)));
 			break;
 		case keyAxisPos[0]:		// joystick axis
 			bindings[bid].setJaxis(uint8(sstoul(il.getVal().substr(3))), il.getVal()[2] != keyAxisNeg[2]);
 			break;
 		case keyGButton[0]:		// gamepad button
-			if (SDL_GameControllerButton cid = strToEnum<SDL_GameControllerButton>(KeyGetter::gbuttonNames, il.getVal().substr(2)); cid < SDL_CONTROLLER_BUTTON_MAX)
+			if (SDL_GameControllerButton cid = strToEnum<SDL_GameControllerButton>(Binding::gbuttonNames, il.getVal().substr(2)); cid < SDL_CONTROLLER_BUTTON_MAX)
 				bindings[bid].setGbutton(cid);
 			break;
 		case keyGAxisPos[0]:	// gamepad axis
-			if (SDL_GameControllerAxis cid = strToEnum<SDL_GameControllerAxis>(KeyGetter::gaxisNames, il.getVal().substr(3)); cid < SDL_CONTROLLER_AXIS_MAX)
+			if (SDL_GameControllerAxis cid = strToEnum<SDL_GameControllerAxis>(Binding::gaxisNames, il.getVal().substr(3)); cid < SDL_CONTROLLER_AXIS_MAX)
 				bindings[bid].setGaxis(cid, (il.getVal()[2] != keyGAxisNeg[2]));
+			break;
+		default:
+			throw std::runtime_error(string("Invalid binding identifier: ") + il.getVal()[0]);
 		}
 	}
 	return bindings;
@@ -255,7 +268,7 @@ void FileSys::saveBindings(const array<Binding, Binding::names.size()>& bindings
 		std::cerr << "failed to write bindings file " << path << std::endl;
 		return;
 	}
-	for (sizet i = 0; i < bindings.size(); i++) {
+	for (sizet i = 0; i < bindings.size(); ++i) {
 		const char* name = Binding::names[i];
 		if (bindings[i].keyAssigned())
 			IniLine::writeVal(ofh, name, keyKey, SDL_GetScancodeName(bindings[i].getKey()));
@@ -263,14 +276,14 @@ void FileSys::saveBindings(const array<Binding, Binding::names.size()>& bindings
 		if (bindings[i].jbuttonAssigned())
 			IniLine::writeVal(ofh, name, keyButton, uint(bindings[i].getJctID()));
 		else if (bindings[i].jhatAssigned())
-			IniLine::writeVal(ofh, name, keyHat, uint(bindings[i].getJctID()), keySep, KeyGetter::hatNames.at(bindings[i].getJhatVal()));
+			IniLine::writeVal(ofh, name, keyHat, uint(bindings[i].getJctID()), keySep, Binding::hatNames.at(bindings[i].getJhatVal()));
 		else if (bindings[i].jaxisAssigned())
 			IniLine::writeVal(ofh, name, (bindings[i].jposAxisAssigned() ? keyAxisPos : keyAxisNeg), uint(bindings[i].getJctID()));
 
 		if (bindings[i].gbuttonAssigned())
-			IniLine::writeVal(ofh, name, keyGButton, KeyGetter::gbuttonNames[uint8(bindings[i].getGbutton())]);
+			IniLine::writeVal(ofh, name, keyGButton, Binding::gbuttonNames[uint8(bindings[i].getGbutton())]);
 		else if (bindings[i].gbuttonAssigned())
-			IniLine::writeVal(ofh, name, (bindings[i].gposAxisAssigned() ? keyGAxisPos : keyGAxisNeg), KeyGetter::gaxisNames[uint8(bindings[i].getGaxis())]);
+			IniLine::writeVal(ofh, name, (bindings[i].gposAxisAssigned() ? keyGAxisPos : keyGAxisNeg), Binding::gaxisNames[uint8(bindings[i].getGaxis())]);
 	}
 }
 
@@ -317,7 +330,7 @@ bool FileSys::writeTextFile(const fs::path& file, const vector<string>& lines) {
 SDL_Color FileSys::readColor(const string& line) {
 	SDL_Color color = { 0, 0, 0, 255 };
 	const char* pos = line.c_str();
-	for (; isSpace(*pos); pos++);
+	for (; isSpace(*pos); ++pos);
 
 	if (*pos == '#') {
 		while (*++pos == '#');
@@ -331,9 +344,9 @@ SDL_Color FileSys::readColor(const string& line) {
 		char* end;
 		if (uint8 num = uint8(strtoul(pos, &end, 0)); end != pos) {
 			reinterpret_cast<uint8*>(&color)[i++] = num;
-			for (pos = end; isSpace(*pos); pos++);
+			for (pos = end; isSpace(*pos); ++pos);
 		} else
-			pos++;
+			++pos;
 	}
 	return color;
 }
@@ -347,15 +360,17 @@ vector<fs::path> FileSys::listDir(const fs::path &drc, bool files, bool dirs, bo
 	try {
 		for (const fs::directory_entry& it : fs::directory_iterator(drc, fs::directory_options::skip_permission_denied)) {
 #ifdef _WIN32
-			if (DWORD attr = GetFileAttributesW(it.path().c_str()); attr != INVALID_FILE_ATTRIBUTES && (showHidden || !(attr & FILE_ATTRIBUTE_HIDDEN)) && (it.status().type() == fs::file_type::directory ? dirs : files))
+			if (DWORD attr = GetFileAttributesW(it.path().c_str()); attr != INVALID_FILE_ATTRIBUTES && (showHidden || !(attr & FILE_ATTRIBUTE_HIDDEN)) && (it.is_directory() ? dirs : files))
 				entries.push_back(it.path().filename());
 #else
-			if (fs::path name = it.path().filename(); (showHidden || name.c_str()[0] != '.') && (it.status().type() == fs::file_type::directory ? dirs : files))
+			if (fs::path name = it.path().filename(); (showHidden || name.c_str()[0] != '.') && (it.is_directory() ? dirs : files))
 				entries.push_back(std::move(name));
 #endif
 		}
 		std::sort(entries.begin(), entries.end(), StrNatCmp());
-	} catch (...) {}
+	} catch (const std::runtime_error& err) {
+		std::cerr << err.what() << std::endl;
+	}
 	return entries;
 }
 
@@ -369,15 +384,17 @@ pair<vector<fs::path>, vector<fs::path>> FileSys::listDirSep(const fs::path& drc
 		for (const fs::directory_entry& it : fs::directory_iterator(drc, fs::directory_options::skip_permission_denied)) {
 #ifdef _WIN32
 			if (DWORD attr = GetFileAttributesW(it.path().c_str()); attr != INVALID_FILE_ATTRIBUTES && (showHidden || !(attr & FILE_ATTRIBUTE_HIDDEN)))
-				(it.status().type() == fs::file_type::directory ? dirs : files).push_back(it.path().filename());
+				(it.is_directory() ? dirs : files).push_back(it.path().filename());
 #else
 			if (fs::path name = it.path().filename(); showHidden || name.c_str()[0] != '.')
-				(it.status().type() == fs::file_type::directory ? dirs : files).push_back(std::move(name));
+				(it.is_directory() ? dirs : files).push_back(std::move(name));
 #endif
 		}
 		std::sort(files.begin(), files.end(), StrNatCmp());
 		std::sort(dirs.begin(), dirs.end(), StrNatCmp());
-	} catch (...) {}
+	} catch (const std::runtime_error& err) {
+		std::cerr << err.what() << std::endl;
+	}
 	return pair(std::move(files), std::move(dirs));
 }
 
@@ -396,8 +413,8 @@ fs::path FileSys::validateFilename(const fs::path& file) {
 #else
 	str.erase(std::remove_if(str.begin(), str.end(), isDsep), str.end());
 #endif
-	if (str.length() > fnameMax)
-		str.resize(fnameMax);
+	if (str.length() > FILENAME_MAX)
+		str.resize(FILENAME_MAX);
 	return fs::u8path(str);
 }
 
@@ -494,7 +511,7 @@ mapFiles FileSys::listArchivePictures(const fs::path& file, vector<string>& name
 		archive_read_free(arch);
 
 		std::sort(names.begin(), names.end(), StrNatCmp());
-		for (sizet i = 0; i < names.size(); i++)
+		for (sizet i = 0; i < names.size(); ++i)
 			files[names[i]].first = i;
 	}
 	return files;
@@ -505,55 +522,91 @@ SDL_Surface* FileSys::loadArchivePicture(archive* arch, archive_entry* entry) {
 	if (bsiz <= 0)
 		return nullptr;
 
-	uint8* buffer = new uint8[sizet(bsiz)];
-	int64 size = archive_read_data(arch, buffer, sizet(bsiz));
-	SDL_Surface* pic = size > 0 ? IMG_Load_RW(SDL_RWFromMem(buffer, int(size)), SDL_TRUE) : nullptr;
-	delete[] buffer;
+	uptr<uint8[]> buffer = std::make_unique<uint8[]>(bsiz);
+	int64 size = archive_read_data(arch, buffer.get(), sizet(bsiz));
+	SDL_Surface* pic = size > 0 ? IMG_Load_RW(SDL_RWFromMem(buffer.get(), int(size)), SDL_TRUE) : nullptr;
 	return pic;
 }
 
-int FileSys::moveContentThreaded(void* data) {
-	Thread* proc = static_cast<Thread*>(data);
-	pairPath* locs = static_cast<pairPath*>(proc->data);
-	vector<fs::path> files = listDir(locs->first);
-
-	for (uptrt i = 0, lim = files.size(); i < lim; i++) {
-		if (!proc->getRun())
+void FileSys::moveContentThreaded(bool* running, fs::path src, fs::path dst) {
+	vector<fs::path> files = listDir(src);
+	for (uptrt i = 0, lim = files.size(); i < lim; ++i) {
+		if (!*running)
 			break;
 
 		pushEvent(UserCode::moveProgress, reinterpret_cast<void*>(i), reinterpret_cast<void*>(lim));
-		fs::path path = locs->first / files[i];
 #ifdef _WIN32
-		if (_wrename(path.c_str(), (locs->second / files[i]).c_str()))
+		if (fs::path path = src / files[i]; _wrename(path.c_str(), (dst / files[i]).c_str()))
 #else
-		if (rename(path.c_str(), (locs->second / files[i]).c_str()))
+		if (fs::path path = src / files[i]; rename(path.c_str(), (dst / files[i]).c_str()))
 #endif
 			std::cerr << "failed no move " << path << std::endl;
 	}
 	pushEvent(UserCode::moveFinished);
-	delete locs;
-	return 0;
+	*running = false;
 }
 
 fs::path FileSys::findFont(const string& font) const {
-	if (fs::path path = fs::u8path(font); isFont(path))	// check if font refers to a file
+	if (fs::path path = fs::u8path(font); isFont(path))
+		return path;
+#ifndef _WIN32
+	if (fs::path path = searchFontDirs(font, array<fs::path, 1>{ dirConfs }); !path.empty())
 		return path;
 
-	for (const fs::path& drc : dirFonts) {	// check font directories
+	if (void* lib = dlopen("libfontconfig.so", RTLD_NOW)) {
+		fs::path found;
+		FcConfig* (*InitLoadConfigAndFonts)() = reinterpret_cast<FcConfig* (*)()>(dlsym(lib, "FcInitLoadConfigAndFonts"));
+		FcPattern* (*NameParse)(const FcChar8*) = reinterpret_cast<FcPattern* (*)(const FcChar8*)>(dlsym(lib, "FcNameParse"));
+		FcBool (*ConfigSubstitute)(FcConfig*, FcPattern*, FcMatchKind) = reinterpret_cast<FcBool (*)(FcConfig*, FcPattern*, FcMatchKind)>(dlsym(lib, "FcConfigSubstitute"));
+		void (*DefaultSubstitute)(FcPattern*) = reinterpret_cast<void (*)(FcPattern*)>(dlsym(lib, "FcDefaultSubstitute"));
+		FcPattern* (*FontMatch)(FcConfig*, FcPattern*, FcResult*) = reinterpret_cast<FcPattern* (*)(FcConfig*, FcPattern*, FcResult*)>(dlsym(lib, "FcFontMatch"));
+		FcResult (*PatternGetString)(FcPattern*, const char*, int, FcChar8**) = reinterpret_cast<FcResult (*)(FcPattern*, const char*, int, FcChar8**)>(dlsym(lib, "FcPatternGetString"));
+		void (*PatternDestroy)(FcPattern*) = reinterpret_cast<void (*)(FcPattern*)>(dlsym(lib, "FcPatternDestroy"));
+		void (*ConfigDestroy)(FcConfig*) = reinterpret_cast<void (*)(FcConfig*)>(dlsym(lib, "FcConfigDestroy"));
+		if (InitLoadConfigAndFonts && NameParse && ConfigSubstitute && DefaultSubstitute && FontMatch && PatternGetString && PatternDestroy && ConfigDestroy) {
+			if (FcConfig* config = InitLoadConfigAndFonts()) {
+				if (FcPattern* pat = NameParse(reinterpret_cast<const FcChar8*>(font.c_str()))) {
+					if (ConfigSubstitute(config, pat, FcMatchPattern)) {
+						DefaultSubstitute(pat);
+						if (FcResult res; FcPattern* fmpat = FontMatch(config, pat, &res)) {
+							if (FcChar8* file = nullptr; PatternGetString(fmpat, FC_FILE, 0, &file) == FcResultMatch)
+								if (fs::path path = fs::u8path(reinterpret_cast<char*>(file)); isFont(path))
+									found = std::move(path);
+							PatternDestroy(fmpat);
+						}
+					}
+					PatternDestroy(pat);
+				}
+				ConfigDestroy(config);
+			}
+		}
+		dlclose(lib);
+		if (!found.empty())
+			return found;
+	}
+#endif
+	return searchFontDirs(font, dirFonts);
+}
+
+template <sizet N>
+fs::path FileSys::searchFontDirs(const string& font, const array<fs::path, N>& dirs) {
+	for (const fs::path& drc : dirs) {
 		try {
 			for (const fs::directory_entry& it : fs::recursive_directory_iterator(drc, fs::directory_options::follow_directory_symlink | fs::directory_options::skip_permission_denied))
 				if (!SDL_strcasecmp(it.path().stem().u8string().c_str(), font.c_str()) && isFont(it.path()))
 					return it.path();
-		} catch (...) {}
+		} catch (const std::runtime_error& err) {
+			std::cerr << err.what() << std::endl;
+		}
 	}
-	return fs::path();	// nothing found
+	return fs::path();
 }
 
 #ifdef _WIN32
 vector<fs::path> FileSys::listDrives() {
 	vector<fs::path> letters;
 	DWORD drives = GetLogicalDrives();
-	for (char i = 0; i < drivesMax; i++)
+	for (char i = 0; i < drivesMax; ++i)
 		if (drives & (1 << i))
 			letters.emplace_back(wstring{ wchar('A' + i), ':', '\\' });
 	return letters;

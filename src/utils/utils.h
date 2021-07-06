@@ -63,40 +63,39 @@ using glm::ivec2;
 using mvec2 = glm::vec<2, sizet, glm::defaultp>;
 
 // forward declarations
+struct archive;
+struct archive_entry;
+class Browser;
 class Button;
+class CheckBox;
+class ComboBox;
+class Context;
 class DrawSys;
+class FileSys;
+class InputSys;
+class Label;
+class LabelEdit;
 class Layout;
+class Overlay;
 struct PictureLoader;
+class Picture;
+class Popup;
 class Program;
+class ProgressBar;
 class ProgState;
+class ReaderBox;
+class RootLayout;
 class Scene;
+class ScrollArea;
+class Settings;
+class Slider;
+class Widget;
 
 // events
 using PCall = void (Program::*)(Button*);
 using LCall = void (Program::*)(Layout*);
 using SBCall = void (ProgState::*)();
 using SACall = void (ProgState::*)(float);
-
-// global constants
-#ifdef _WIN32
-constexpr wchar topDir[] = L"";
-#else
-constexpr char topDir[] = "/";
-#endif
-
-constexpr array<char, 4> sizeLetters = {
-	'B',
-	'K',
-	'M',
-	'G'
-};
-
-constexpr array<uptrt, 4> sizeFactors = {
-	1,
-	1'000,
-	1'000'000,
-	1'000'000'000
-};
 
 // general wrappers
 
@@ -161,15 +160,9 @@ inline ivec2 mousePos() {
 	return p;
 }
 
-inline string getRendererName(int id) {
-	SDL_RendererInfo info;
-	return !SDL_GetRenderDriverInfo(id, &info) ? info.name : "";
-}
-
 void pushEvent(UserCode code, void* data1 = nullptr, void* data2 = nullptr);
 
 // SDL_Rect wrapper
-
 struct Rect : SDL_Rect {
 	Rect() = default;
 	constexpr Rect(int n);
@@ -187,15 +180,15 @@ struct Rect : SDL_Rect {
 	Rect intersect(const Rect& rect) const;	// same as above except it returns the overlap instead of the crop and it doesn't modify itself
 };
 
-inline constexpr Rect::Rect(int n) :
+constexpr Rect::Rect(int n) :
 	SDL_Rect({ n, n, n, n })
 {}
 
-inline constexpr Rect::Rect(int px, int py, int sw, int sh) :
+constexpr Rect::Rect(int px, int py, int sw, int sh) :
 	SDL_Rect({ px, py, sw, sh })
 {}
 
-inline constexpr Rect::Rect(ivec2 pos, ivec2 size) :
+constexpr Rect::Rect(ivec2 pos, ivec2 size) :
 	SDL_Rect({ pos.x, pos.y, size.x, size.y })
 {}
 
@@ -203,7 +196,7 @@ inline ivec2& Rect::pos() {
 	return *reinterpret_cast<ivec2*>(this);
 }
 
-inline constexpr ivec2 Rect::pos() const {
+constexpr ivec2 Rect::pos() const {
 	return ivec2(x, y);
 }
 
@@ -211,11 +204,11 @@ inline ivec2& Rect::size() {
 	return reinterpret_cast<ivec2*>(this)[1];
 }
 
-inline constexpr ivec2 Rect::size() const {
+constexpr ivec2 Rect::size() const {
 	return ivec2(w, h);
 }
 
-inline constexpr ivec2 Rect::end() const {
+constexpr ivec2 Rect::end() const {
 	return pos() + size();
 }
 
@@ -228,36 +221,19 @@ inline Rect Rect::intersect(const Rect& rect) const {
 	return SDL_IntersectRect(this, &rect, &isct) ? isct : Rect(0);
 }
 
-// SDL_Thread wrapper
+// reader picture
+struct Texture {
+	string name;
+	SDL_Texture* tex;
 
-class Thread {
-public:
-	Thread(int (*func)(void*), void* pdata = nullptr);
-	~Thread();
+	Texture(string&& tname = string(), SDL_Texture* texture = nullptr);
 
-	bool start(int (*func)(void*));
-	bool getRun() const;
-	void interrupt();
-	int finish();
-
-	void* data;
-private:
-	SDL_Thread* proc;
-	bool run;
+	ivec2 res() const;
 };
 
-inline Thread::~Thread() {
-	finish();
+inline ivec2 Texture::res() const {
+	return texSize(tex);
 }
-
-inline bool Thread::getRun() const {
-	return run;
-}
-
-inline void Thread::interrupt() {
-	run = false;
-}
-
 
 // files and strings
 
@@ -312,21 +288,6 @@ inline fs::path relativePath(const fs::path& path, const fs::path& base) {
 
 inline bool isSubpath(const fs::path& path, const fs::path& base) {
 	return base.empty() || !path.lexically_relative(base).empty();
-}
-
-inline sizet memSizeMag(uptrt num) {
-	sizet m;
-	for (m = 0; m + 1 < sizeLetters.size() && (!(num % 1000) && (num /= 1000)); m++);
-	return m;
-}
-
-inline string memoryString(uptrt num, sizet mag) {
-	string str = to_string(num / sizeFactors[mag]);
-	return (mag ? str + sizeLetters[mag] : str) + sizeLetters[0];
-}
-
-inline string memoryString(uptrt num) {
-	return memoryString(num, memSizeMag(num));
 }
 
 // conversions
@@ -396,7 +357,7 @@ T btom(bool b) {
 template <class T, class F, class... A>
 T readNumber(const char*& pos, F strtox, A... args) {
 	T num = T(0);
-	for (char* end; *pos; pos++)
+	for (char* end; *pos; ++pos)
 		if (num = T(strtox(pos, &end, args...)); pos != end) {
 			pos = end;
 			break;
@@ -407,8 +368,8 @@ T readNumber(const char*& pos, F strtox, A... args) {
 template <class T, class F, class... A>
 T stoxv(const char* str, F strtox, typename T::value_type fill, A... args) {
 	T vec(fill);
-	for (glm::length_t i = 0; *str && i < vec.length();)
-		vec[i++] = readNumber<typename T::value_type>(str, strtox, args...);
+	for (glm::length_t i = 0; *str && i < vec.length(); ++i)
+		vec[i] = readNumber<typename T::value_type>(str, strtox, args...);
 	return vec;
 }
 

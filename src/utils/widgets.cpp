@@ -1,12 +1,10 @@
+#include "engine/scene.h"
+#include "engine/drawSys.h"
+#include "engine/inputSys.h"
 #include "engine/world.h"
+#include "prog/progs.h"
 
 // WIDGET
-
-Widget::Widget(const Size& size) :
-	parent(nullptr),
-	index(SIZE_MAX),
-	relSize(size)
-{}
 
 bool Widget::navSelectable() const {
 	return false;
@@ -145,8 +143,7 @@ Slider::Slider(const Size& size, int value, int minimum, int maximum, PCall left
 	Button(size, leftCall, rightCall, doubleCall, tip, bg, texture, margin),
 	val(value),
 	vmin(minimum),
-	vmax(maximum),
-	diffSliderMouse(0)
+	vmax(maximum)
 {}
 
 void Slider::drawSelf() const {
@@ -220,7 +217,6 @@ Rect ProgressBar::barRect() const {
 
 Label::Label(const Size& size, string line, PCall leftCall, PCall rightCall, PCall doubleCall, SDL_Texture* tip, Alignment alignment, SDL_Texture* texture, bool bg, int lineMargin, int iconMargin) :
 	Button(size, leftCall, rightCall, doubleCall, tip, bg, texture, iconMargin),
-	textTex(nullptr),
 	text(std::move(line)),
 	textMargin(lineMargin),
 	align(alignment)
@@ -271,11 +267,11 @@ ivec2 Label::textPos() const {
 		return ivec2(pos.x + textIconOffset() + textMargin, pos.y);
 	case Alignment::center: {
 		int iofs = textIconOffset();
-		return ivec2(pos.x + iofs + (size().x - iofs - texSize(textTex).x)/2, pos.y); }
+		return ivec2(pos.x + iofs + (size().x - iofs - texSize(textTex).x) / 2, pos.y); }
 	case Alignment::right:
 		return ivec2(pos.x + size().x - texSize(textTex).x - textMargin, pos.y);
 	}
-	return ivec2(0);	// to get rid of warning
+	throw std::runtime_error("Invalid alignment type: " + to_string(uint8(align)));
 }
 
 int Label::textIconOffset() const {
@@ -300,8 +296,8 @@ ComboBox::ComboBox(const Size& size, string curOption, vector<string>&& opts, PC
 {}
 
 void ComboBox::onClick(ivec2, uint8 mBut) {
-	if (mBut == SDL_BUTTON_LEFT || SDL_BUTTON_RIGHT)
-		World::scene()->setContext(World::state()->createComboContext(this, mBut == SDL_BUTTON_LEFT ? lcall : rcall));
+	if (mBut == SDL_BUTTON_LEFT || mBut == SDL_BUTTON_RIGHT)
+		World::scene()->setContext(ProgState::createComboContext(this, mBut == SDL_BUTTON_LEFT ? lcall : rcall));
 }
 
 void ComboBox::setCurOpt(sizet id) {
@@ -315,8 +311,6 @@ LabelEdit::LabelEdit(const Size& size, string line, PCall leftCall, PCall rightC
 	Label(size, std::move(line), leftCall, rightCall, doubleCall, tip, Alignment::left, texture, bg, lineMargin, iconMargin),
 	unfocusConfirm(focusLossConfirm),
 	textType(type),
-	textOfs(0),
-	cpos(0),
 	oldText(text)
 {
 	cleanText();
@@ -490,19 +484,19 @@ uint LabelEdit::jumpCharF(uint i) {
 uint LabelEdit::findWordStart() {
 	uint i = cpos;
 	if (i == text.length())
-		i--;
+		--i;
 	else if (notSpace(text[i]) && i)
 		if (uint n = jumpCharB(i); isSpace(text[n]))	// skip if first letter of word
 			i = n;
-	for (; isSpace(text[i]) && i; i--);		// skip first spaces
-	for (; notSpace(text[i]) && i; i--);	// skip word
+	for (; isSpace(text[i]) && i; --i);		// skip first spaces
+	for (; notSpace(text[i]) && i; --i);	// skip word
 	return i ? i + 1 : i;			// correct position if necessary
 }
 
 uint LabelEdit::findWordEnd() {
 	uint i = cpos;
-	for (; isSpace(text[i]) && i < text.length(); i++);		// skip first spaces
-	for (; notSpace(text[i]) && i < text.length(); i++);	// skip word
+	for (; isSpace(text[i]) && i < text.length(); ++i);		// skip first spaces
+	for (; notSpace(text[i]) && i < text.length(); ++i);	// skip word
 	return i;
 }
 
@@ -531,6 +525,10 @@ void LabelEdit::cleanText() {
 		break;
 	case TextType::uFloatSpaced:
 		cleanUFloatSpacedText();
+		break;
+	default:
+		if (textType != TextType::text)
+			throw std::runtime_error("Invalid text type: " + to_string(uint8(textType)));
 	}
 }
 
@@ -541,7 +539,7 @@ void LabelEdit::cleanSIntSpacedText() {
 			it = std::find_if(it + 1, text.end(), [](char c) -> bool { return !isdigit(c); });
 		else if (*it == ' ') {
 			if (it = std::find_if(it + 1, text.end(), [](char c) -> bool { return c != ' '; }); it != text.end() && *it == '-')
-				it++;
+				++it;
 		} else {
 			pdift ofs = it - text.begin();
 			text.erase(it, std::find_if(it + 1, text.end(), [](char c) -> bool { return isdigit(c) || c == ' '; }));
@@ -573,7 +571,7 @@ void LabelEdit::cleanSFloatText() {
 			it = std::find_if(it + 1, text.end(), [](char c) -> bool { return !isdigit(c); });
 		else if (*it == '.'  && !dot) {
 			dot = true;
-			it++;
+			++it;
 		} else {
 			pdift ofs = it - text.begin();
 			text.erase(it, std::find_if(it + 1, text.end(), [dot](char c) -> bool { return isdigit(c) || (c == '.' && !dot); }));
@@ -590,10 +588,10 @@ void LabelEdit::cleanSFloatSpacedText() {
 			it = std::find_if(it + 1, text.end(), [](char c) -> bool { return !isdigit(c); });
 		else if (*it == ' ') {
 			if (it = std::find_if(it + 1, text.end(), [](char c) -> bool { return c != ' '; }); it != text.end() && *it == '-')
-				it++;
+				++it;
 		} else if (*it == '.' && !dot) {
 			dot = true;
-			it++;
+			++it;
 		} else {
 			pdift ofs = it - text.begin();
 			text.erase(it, std::find_if(it + 1, text.end(), [dot](char c) -> bool { return isdigit(c) || c == ' ' || (c == '.' && !dot); }));
@@ -610,7 +608,7 @@ void LabelEdit::cleanUFloatText() {
 			it = std::find_if(it + 1, text.end(), [](char c) -> bool { return !isdigit(c); });
 		else if (*it == '.'  && !dot) {
 			dot = true;
-			it++;
+			++it;
 		} else {
 			pdift ofs = it - text.begin();
 			text.erase(it, std::find_if(it + 1, text.end(), [dot](char c) -> bool { return isdigit(c) || (c == '.' && !dot); }));
@@ -629,7 +627,7 @@ void LabelEdit::cleanUFloatSpacedText() {
 			it = std::find_if(it + 1, text.end(), [](char c) -> bool { return c != ' '; });
 		else if (*it == '.' && !dot) {
 			dot = true;
-			it++;
+			++it;
 		} else {
 			pdift ofs = it - text.begin();
 			text.erase(it, std::find_if(it + 1, text.end(), [dot](char c) -> bool { return isdigit(c) || c == ' ' || (c == '.' && !dot); }));
@@ -681,7 +679,7 @@ void KeyGetter::onJHat(uint8 jhat, uint8 value) {
 				value = SDL_HAT_LEFT;
 		}
 		World::inputSys()->getBinding(bindingType).setJhat(jhat, value);
-		setText(prefHat + to_string(jhat) + prefSep + hatNames.at(value));
+		setText(prefHat + to_string(jhat) + prefSep + Binding::hatNames.at(value));
 	}
 	World::scene()->capture = nullptr;
 }
@@ -697,7 +695,7 @@ void KeyGetter::onJAxis(uint8 jaxis, bool positive) {
 void KeyGetter::onGButton(SDL_GameControllerButton gbutton) {
 	if (acceptType == AcceptType::gamepad) {
 		World::inputSys()->getBinding(bindingType).setGbutton(gbutton);
-		setText(gbuttonNames[uint8(gbutton)]);
+		setText(Binding::gbuttonNames[uint8(gbutton)]);
 	}
 	World::scene()->capture = nullptr;
 }
@@ -705,7 +703,7 @@ void KeyGetter::onGButton(SDL_GameControllerButton gbutton) {
 void KeyGetter::onGAxis(SDL_GameControllerAxis gaxis, bool positive) {
 	if (acceptType == AcceptType::gamepad) {
 		World::inputSys()->getBinding(bindingType).setGaxis(gaxis, positive);
-		setText(string(1, (positive ? prefAxisPos : prefAxisNeg)) + gaxisNames[uint8(gaxis)]);
+		setText(string(1, (positive ? prefAxisPos : prefAxisNeg)) + Binding::gaxisNames[uint8(gaxis)]);
 	}
 	World::scene()->capture = nullptr;
 }
@@ -724,6 +722,9 @@ void KeyGetter::clearBinding() {
 		break;
 	case AcceptType::gamepad:
 		World::inputSys()->getBinding(bindingType).clearAsgGct();
+		break;
+	default:
+		throw std::runtime_error("Invalid accept type: " + to_string(uint8(acceptType)));
 	}
 	setText(string());
 }
@@ -738,15 +739,18 @@ string KeyGetter::bindingText(Binding::Type binding, KeyGetter::AcceptType accep
 		if (bind.jbuttonAssigned())
 			return prefButton + to_string(bind.getJctID());
 		else if (bind.jhatAssigned())
-			return prefHat + to_string(bind.getJctID()) + prefSep + hatNames.at(bind.getJhatVal());
+			return prefHat + to_string(bind.getJctID()) + prefSep + Binding::hatNames.at(bind.getJhatVal());
 		else if (bind.jaxisAssigned())
 			return string(prefAxis) + (bind.jposAxisAssigned() ? prefAxisPos : prefAxisNeg) + to_string(bind.getJctID());
 		break;
 	case AcceptType::gamepad:
 		if (bind.gbuttonAssigned())
-			return gbuttonNames[uint8(bind.getGbutton())];
+			return Binding::gbuttonNames[uint8(bind.getGbutton())];
 		else if (bind.gaxisAssigned())
-			return string(1, (bind.gposAxisAssigned() ? prefAxisPos : prefAxisNeg)) + gaxisNames[uint8(bind.getGaxis())];
+			return string(1, (bind.gposAxisAssigned() ? prefAxisPos : prefAxisNeg)) + Binding::gaxisNames[uint8(bind.getGaxis())];
+		break;
+	default:
+		throw std::runtime_error("Invalid accept type: " + to_string(uint8(accept)));
 	}
 	return string();
 }

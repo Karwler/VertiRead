@@ -1,9 +1,6 @@
 #pragma once
 
-#include "drawSys.h"
-#include "inputSys.h"
-#include "prog/program.h"
-#include "scene.h"
+#include "utils/utils.h"
 
 // handles window events and contains video settings
 class WindowSys {
@@ -13,20 +10,17 @@ private:
 	static constexpr uint32 eventCheckTimeout = 50;
 	static constexpr float ticksPerSec = 1000.f;
 
-	uptr<FileSys> fileSys;
-	uptr<DrawSys> drawSys;
-	uptr<InputSys> inputSys;
-	uptr<Program> program;
-	uptr<Scene> scene;
-	uptr<Settings> sets;
-
-	SDL_Window* window;
-	float dSec;			// delta seconds, aka the time between each iteration of the above mentioned loop
-	bool run;			// whether the loop in which the program runs should continue
+	FileSys* fileSys;
+	DrawSys* drawSys;
+	InputSys* inputSys;
+	Program* program;
+	Scene* scene;
+	Settings* sets;
+	SDL_Window* window = nullptr;
+	float dSec = 0.f;		// delta seconds, aka the time between each iteration of the above mentioned loop
+	bool run = true;		// whether the loop in which the program runs should continue
 
 public:
-	WindowSys();
-
 	int start();
 	void close();
 
@@ -67,27 +61,27 @@ inline float WindowSys::getDSec() const {
 }
 
 inline FileSys* WindowSys::getFileSys() {
-	return fileSys.get();
+	return fileSys;
 }
 
 inline DrawSys* WindowSys::getDrawSys() {
-	return drawSys.get();
+	return drawSys;
 }
 
 inline InputSys* WindowSys::getInputSys() {
-	return inputSys.get();
+	return inputSys;
 }
 
 inline Program* WindowSys::getProgram() {
-	return program.get();
+	return program;
 }
 
 inline Scene* WindowSys::getScene() {
-	return scene.get();
+	return scene;
 }
 
 inline Settings* WindowSys::getSets() {
-	return sets.get();
+	return sets;
 }
 
 inline uint32 WindowSys::windowID() const {

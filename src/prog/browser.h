@@ -1,10 +1,16 @@
 #pragma once
 
-#include "engine/fileSys.h"
+#include "utils/utils.h"
 
 // logic for browsing files
 class Browser {
 public:
+#ifdef _WIN32
+	static constexpr wchar topDir[] = L"";
+#else
+	static constexpr char topDir[] = "/";
+#endif
+
 	PCall exCall;	// gets called when goUp() fails, aka stepping out of rootDir into the previous menu
 private:
 	fs::path rootDir;	// the top directory one can visit

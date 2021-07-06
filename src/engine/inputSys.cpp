@@ -1,3 +1,7 @@
+#include "inputSys.h"
+#include "drawSys.h"
+#include "fileSys.h"
+#include "scene.h"
 #include "world.h"
 
 // CONTROLLER
@@ -18,10 +22,7 @@ void InputSys::Controller::close() {
 // INPUT SYS
 
 InputSys::InputSys() :
-	mouseLast(false),
-	bindings(World::fileSys()->getBindings()),
-	mouseMove(0),
-	moveTime(0)
+	bindings(World::fileSys()->getBindings())
 {
 	reloadControllers();
 }
@@ -60,14 +61,14 @@ void InputSys::eventMouseWheel(const SDL_MouseWheelEvent& wheel) {
 	World::scene()->onMouseWheel(ivec2(wheel.x, -wheel.y));
 }
 
-void InputSys::eventKeypress(const SDL_KeyboardEvent& key) {
+void InputSys::eventKeypress(const SDL_KeyboardEvent& key) const {
 	if (World::scene()->capture)	// different behavior when capturing or not
 		World::scene()->capture->onKeypress(key.keysym);
 	else
 		checkBindingsK(key.keysym.scancode, key.repeat);
 }
 
-void InputSys::eventJoystickButton(const SDL_JoyButtonEvent& jbutton) {
+void InputSys::eventJoystickButton(const SDL_JoyButtonEvent& jbutton) const {
 	if (SDL_GameControllerFromInstanceID(jbutton.which))	// don't execute if there can be a game controller event
 		return;
 
@@ -77,7 +78,7 @@ void InputSys::eventJoystickButton(const SDL_JoyButtonEvent& jbutton) {
 		checkBindingsB(jbutton.button);
 }
 
-void InputSys::eventJoystickHat(const SDL_JoyHatEvent& jhat) {
+void InputSys::eventJoystickHat(const SDL_JoyHatEvent& jhat) const {
 	if (jhat.value == SDL_HAT_CENTERED || SDL_GameControllerFromInstanceID(jhat.which))
 		return;
 
@@ -87,7 +88,7 @@ void InputSys::eventJoystickHat(const SDL_JoyHatEvent& jhat) {
 		checkBindingsH(jhat.hat, jhat.value);
 }
 
-void InputSys::eventJoystickAxis(const SDL_JoyAxisEvent& jaxis) {
+void InputSys::eventJoystickAxis(const SDL_JoyAxisEvent& jaxis) const {
 	int value = checkAxisValue(jaxis.value);
 	if (!value || SDL_GameControllerFromInstanceID(jaxis.which))
 		return;
@@ -98,14 +99,14 @@ void InputSys::eventJoystickAxis(const SDL_JoyAxisEvent& jaxis) {
 		checkBindingsA(jaxis.axis, value > 0);
 }
 
-void InputSys::eventGamepadButton(const SDL_ControllerButtonEvent& gbutton) {
+void InputSys::eventGamepadButton(const SDL_ControllerButtonEvent& gbutton) const {
 	if (World::scene()->capture)
 		World::scene()->capture->onGButton(SDL_GameControllerButton(gbutton.button));
 	else
 		checkBindingsG(SDL_GameControllerButton(gbutton.button));
 }
 
-void InputSys::eventGamepadAxis(const SDL_ControllerAxisEvent& gaxis) {
+void InputSys::eventGamepadAxis(const SDL_ControllerAxisEvent& gaxis) const {
 	int value = checkAxisValue(gaxis.value);
 	if (!value)
 		return;
@@ -134,43 +135,43 @@ void InputSys::eventFingerUp(const SDL_TouchFingerEvent& fin) {
 
 void InputSys::tick() const {
 	// handle key hold
-	for (sizet i = uint8(Binding::holders); i < bindings.size(); i++)
+	for (sizet i = uint8(Binding::holders); i < bindings.size(); ++i)
 		if (float amt = 1.f; isPressed(bindings[i], amt))
 			World::srun(bindings[i].acall, amt);
 }
 
 void InputSys::checkBindingsK(SDL_Scancode key, uint8 repeat) const {
-	for (uint8 i = 0, e = uint8(repeat ? Binding::Type::right : Binding::holders); i < e; i++)
+	for (uint8 i = 0, e = uint8(repeat ? Binding::Type::right : Binding::holders); i < e; ++i)
 		if (bindings[i].keyAssigned() && bindings[i].getKey() == key)
 			World::srun(bindings[i].bcall);
 }
 
 void InputSys::checkBindingsB(uint8 jbutton) const {
-	for (uint8 i = 0; i < uint8(Binding::holders); i++)
+	for (uint8 i = 0; i < uint8(Binding::holders); ++i)
 		if (bindings[i].jbuttonAssigned() && bindings[i].getJctID() == jbutton)
 			World::srun(bindings[i].bcall);
 }
 
 void InputSys::checkBindingsH(uint8 jhat, uint8 val) const {
-	for (uint8 i = 0; i < uint8(Binding::holders); i++)
+	for (uint8 i = 0; i < uint8(Binding::holders); ++i)
 		if (bindings[i].jhatAssigned() && bindings[i].getJctID() == jhat && bindings[i].getJhatVal() == val)
 			World::srun(bindings[i].bcall);
 }
 
 void InputSys::checkBindingsA(uint8 jaxis, bool positive) const {
-	for (uint8 i = 0; i < uint8(Binding::holders); i++)
+	for (uint8 i = 0; i < uint8(Binding::holders); ++i)
 		if (bindings[i].jposAxisAssigned() == positive && bindings[i].getJctID() == jaxis)
 			World::srun(bindings[i].bcall);
 }
 
 void InputSys::checkBindingsG(SDL_GameControllerButton gbutton) const {
-	for (uint8 i = 0; i < uint8(Binding::holders); i++)
+	for (uint8 i = 0; i < uint8(Binding::holders); ++i)
 		if (bindings[i].gbuttonAssigned() && bindings[i].getGbutton() == gbutton)
 			World::srun(bindings[i].bcall);
 }
 
 void InputSys::checkBindingsX(SDL_GameControllerAxis gaxis, bool positive) const {
-	for (uint8 i = 0; i < uint8(Binding::holders); i++)
+	for (uint8 i = 0; i < uint8(Binding::holders); ++i)
 		if (bindings[i].gposAxisAssigned() == positive && bindings[i].getGaxis() == gaxis)
 			World::srun(bindings[i].bcall);
 }
@@ -202,7 +203,7 @@ bool InputSys::isPressed(const Binding& abind, float& amt) const {
 bool InputSys::isPressedH(uint8 jhat, uint8 val) const {
 	for (const Controller& it : controllers)
 		if (!it.gamepad)
-			for (int i = 0; i < SDL_JoystickNumHats(it.joystick); i++)
+			for (int i = 0; i < SDL_JoystickNumHats(it.joystick); ++i)
 				if (jhat == i && SDL_JoystickGetHat(it.joystick, i) == val)
 					return true;
 	return false;
@@ -225,7 +226,7 @@ int InputSys::getAxisG(SDL_GameControllerAxis gaxis) const {
 }
 
 void InputSys::resetBindings() {
-	for (sizet i = 0; i < bindings.size(); i++)
+	for (sizet i = 0; i < bindings.size(); ++i)
 		bindings[i].reset(Binding::Type(i));
 }
 
@@ -234,7 +235,7 @@ void InputSys::reloadControllers() {
 		it.close();
 	controllers.clear();
 
-	for (int i = 0; i < SDL_NumJoysticks(); i++) {
+	for (int i = 0; i < SDL_NumJoysticks(); ++i) {
 		if (Controller ctr; ctr.open(i))
 			controllers.push_back(ctr);
 		else

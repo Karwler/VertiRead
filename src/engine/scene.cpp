@@ -1,4 +1,8 @@
+#include "scene.h"
+#include "drawSys.h"
+#include "inputSys.h"
 #include "world.h"
+#include "prog/progs.h"
 
 // CLICK STAMP
 
@@ -9,11 +13,6 @@ ClickStamp::ClickStamp(Widget* wgt, ScrollArea* sarea, ivec2 cursPos) :
 {}
 
 // SCENE
-
-Scene::Scene() :
-	select(nullptr),
-	capture(nullptr)
-{}
 
 void Scene::tick(float dSec) {
 	layout->tick(dSec);
@@ -177,7 +176,7 @@ ScrollArea* Scene::getSelectedScrollArea() const {
 	return dynamic_cast<ScrollArea*>(parent);
 }
 
-bool Scene::overlayFocused(ivec2 mPos) {
+bool Scene::overlayFocused(ivec2 mPos) const {
 	if (overlay)
 		return overlay->on = overlay->on ? overlay->rect().contain(mPos) : overlay->actRect().contain(mPos);
 	return false;
@@ -201,19 +200,19 @@ void Scene::selectFirst() {
 				select = lay->getWidget(0);
 				break;
 			} else
-				id++;
+				++id;
 		}
 	}
 }
 
-sizet Scene::findSelectedID(Layout* box) {
+sizet Scene::findSelectedID(Layout* box) const {
 	Widget* child = select;
 	while (child->getParent() && child->getParent() != box)
 		child = child->getParent();
 	return child->getParent() ? child->getIndex() : SIZE_MAX;
 }
 
-bool Scene::cursorDisableable() {
+bool Scene::cursorDisableable() const {
 	Layout* parent = dynamic_cast<Layout*>(select);
 	if (select && !parent)
 		parent = select->getParent();

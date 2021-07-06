@@ -165,6 +165,9 @@ void Binding::reset(Type newType) {
 		setKey(SDL_SCANCODE_Z);
 		setJbutton(3);
 		setGbutton(SDL_CONTROLLER_BUTTON_X);
+		break;
+	default:
+		throw std::runtime_error("Invalid binding type: " + to_string(uint8(type)));
 	}
 }
 
@@ -232,7 +235,7 @@ uptrt PicLim::toCount(const string& str) {
 uptrt PicLim::toSize(const string& str) {
 	const char* pos;
 	char* end;
-	for (pos = str.c_str(); !isdigit(*pos) && *pos; pos++);
+	for (pos = str.c_str(); !isdigit(*pos) && *pos; ++pos);
 	uptrt num = uptrt(strtoull(pos, &end, 0));
 	if (!num)
 		return defaultSize();
@@ -250,22 +253,23 @@ uptrt PicLim::toSize(const string& str) {
 			num *= sizeFactors[3];
 		}
 	mit = std::find_if(mit, str.end(), [](char c) -> bool { return toupper(c) == sizeLetters[0]; });
-	return mit == str.end() || *mit != 'b' ? num : num /= 8;
+	return mit == str.end() || *mit != 'b' ? num : num / 8;
+}
+
+sizet PicLim::memSizeMag(uptrt num) {
+	sizet m;
+	for (m = 0; m + 1 < sizeLetters.size() && (!(num % 1000) && (num /= 1000)); ++m);
+	return m;
+}
+
+string PicLim::memoryString(uptrt num, sizet mag) {
+	string str = to_string(num / sizeFactors[mag]);
+	return (mag ? str + sizeLetters[mag] : str) + sizeLetters[0];
 }
 
 // SETTINGS
 
 Settings::Settings(const fs::path& dirSets, vector<string>&& themes) :
-	maximized(false),
-	fullscreen(false),
-	showHidden(true),
-	direction(Direction::down),
-	zoom(defaultZoom),
-	spacing(defaultSpacing),
-	resolution(800, 600),
-	font(defaultFont),
-	scrollSpeed(1600.f, 1600.f),
-	deadzone(256),
 	dirLib(dirSets / defaultDirLib)
 {
 	setTheme(string(), std::move(themes));
@@ -282,17 +286,23 @@ const fs::path& Settings::setDirLib(const fs::path& drc, const fs::path& dirSets
 		if (dirLib = drc; !fs::is_directory(dirLib) && !fs::create_directories(dirLib))
 			if (dirLib = dirSets / defaultDirLib; !fs::is_directory(dirLib))
 				fs::create_directories(dirLib);
-	} catch (...) {
+	} catch (const std::runtime_error& err) {
+		std::cerr << err.what() << std::endl;
 		dirLib = dirSets / defaultDirLib;
 	}
 	return dirLib;
 }
 
-int Settings::getRendererIndex() {
-	// get index of currently selected renderer (if name doesn't match, choose the first renderer)
-	for (int i = 0; i < SDL_GetNumRenderDrivers(); i++)
-		if (getRendererName(i) == renderer)
-			return i;
-	renderer = getRendererName(0);
-	return 0;
+pair<int, uint32> Settings::getRendererInfo() {
+	SDL_RendererInfo info;
+	for (int i = 0; i < SDL_GetNumRenderDrivers(); ++i)
+		if (!SDL_GetRenderDriverInfo(i, &info) && info.name == renderer)
+			return pair(i, info.flags);
+
+	if (!SDL_GetRenderDriverInfo(0, &info)) {
+		renderer = info.name;
+		return pair(0, info.flags);
+	}
+	renderer.clear();
+	return pair(-1, 0);
 }

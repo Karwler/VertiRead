@@ -1,10 +1,15 @@
+#include "progs.h"
+#include "engine/drawSys.h"
+#include "engine/fileSys.h"
+#include "engine/inputSys.h"
+#include "engine/scene.h"
 #include "engine/world.h"
 
 // PROGRAM TEXT
 
-ProgState::Text::Text(string str, int height, int margin) :
+ProgState::Text::Text(string str, int height) :
 	text(std::move(str)),
-	length(World::drawSys()->textLength(text.c_str(), height) + margin * 2)
+	length(World::drawSys()->textLength(text.c_str(), height) + Label::defaultTextMargin * 2)
 {}
 
 // PROGRAM STATE
@@ -86,13 +91,13 @@ uptr<Overlay> ProgState::createOverlay() {
 	return nullptr;
 }
 
-uptr<Popup> ProgState::createPopupMessage(string msg, PCall ccal, string ctxt, Label::Alignment malign) {
+uptr<Popup> ProgState::createPopupMessage(string msg, PCall ccal, string ctxt, Alignment malign) {
 	Text ok(std::move(ctxt), popupLineHeight);
 	Text mg(std::move(msg), popupLineHeight);
 	Widget* first;
 	vector<Widget*> bot = {
 		new Widget(),
-		first = new Label(ok.length, std::move(ok.text), ccal, nullptr, nullptr, nullptr, Label::Alignment::center),
+		first = new Label(ok.length, std::move(ok.text), ccal, nullptr, nullptr, nullptr, Alignment::center),
 		new Widget()
 	};
 	vector<Widget*> con = {
@@ -102,12 +107,12 @@ uptr<Popup> ProgState::createPopupMessage(string msg, PCall ccal, string ctxt, L
 	return std::make_unique<Popup>(svec2(mg.length + Layout::defaultItemSpacing * 2, popupLineHeight * 2 + Layout::defaultItemSpacing * 3), std::move(con), first);
 }
 
-uptr<Popup> ProgState::createPopupChoice(string msg, PCall kcal, PCall ccal, Label::Alignment malign) {
+uptr<Popup> ProgState::createPopupChoice(string msg, PCall kcal, PCall ccal, Alignment malign) {
 	Text mg(std::move(msg), popupLineHeight);
 	Widget* first;
 	vector<Widget*> bot = {
-		first = new Label(1.f, "Yes", kcal, nullptr, nullptr, nullptr, Label::Alignment::center),
-		new Label(1.f, "No", ccal, nullptr, nullptr, nullptr, Label::Alignment::center)
+		first = new Label(1.f, "Yes", kcal, nullptr, nullptr, nullptr, Alignment::center),
+		new Label(1.f, "No", ccal, nullptr, nullptr, nullptr, Alignment::center)
 	};
 	vector<Widget*> con = {
 		new Label(1.f, std::move(mg.text), nullptr, nullptr, nullptr, nullptr, malign),
@@ -142,7 +147,7 @@ Rect ProgState::calcTextContextRect(const vector<Widget*>& items, ivec2 pos, ive
 		if (Label* lbl = dynamic_cast<Label*>(it))
 			if (int w = World::drawSys()->textLength(lbl->getText().c_str(), size.y) + lbl->getTextMargin() * 2 + Slider::barSize + margin * 2; w > size.x)
 				size.x = w;
-	size.y = size.y * items.size() + margin * 2;
+	size.y = size.y * int(items.size()) + margin * 2;
 
 	ivec2 res = World::drawSys()->viewport().size();
 	calcContextPos(pos.x, size.x, res.x);
@@ -160,10 +165,10 @@ void ProgState::calcContextPos(int& pos, int& siz, int limit) {
 }
 
 template <class T>
-int ProgState::findMaxLength(T pos, T end, int height, int margin) {
+int ProgState::findMaxLength(T pos, T end, int height) {
 	int width = 0;
-	for (; pos != end; pos++)
-		if (int len = World::drawSys()->textLength(*pos, height) + margin * 2; len > width)
+	for (; pos != end; ++pos)
+		if (int len = World::drawSys()->textLength(*pos, height) + Label::defaultTextMargin * 2; len > width)
 			width = len;
 	return width;
 }
@@ -216,7 +221,7 @@ uptr<RootLayout> ProgBooks::createLayout() {
 	// book list
 	vector<fs::path> books = FileSys::listDir(World::sets()->getDirLib(), false, true, World::sets()->showHidden);
 	vector<Widget*> tiles(books.size()+1);
-	for (sizet i = 0; i < books.size(); i++) {
+	for (sizet i = 0; i < books.size(); ++i) {
 		Text txt(books[i].u8string(), TileBox::defaultItemHeight);
 		tiles[i] = new Label(txt.length, std::move(txt.text), &Program::eventOpenPageBrowser, &Program::eventOpenBookContext);
 	}
@@ -262,10 +267,10 @@ uptr<RootLayout> ProgPageBrowser::createLayout() {
 	// list of files and directories
 	auto [files, dirs] = World::browser()->listCurDir(World::sets()->showHidden);
 	vector<Widget*> items(files.size() + dirs.size());
-	for (sizet i = 0; i < dirs.size(); i++)
-		items[i] = new Label(lineHeight, std::move(dirs[i]), &Program::eventBrowserGoIn, nullptr, nullptr, nullptr, Label::Alignment::left, World::drawSys()->texture("folder"));
-	for (sizet i = 0; i < files.size(); i++)
-		items[dirs.size()+i] = new Label(lineHeight, std::move(files[i]), &Program::eventBrowserGoFile, nullptr, nullptr, nullptr, Label::Alignment::left, World::drawSys()->texture("file"));
+	for (sizet i = 0; i < dirs.size(); ++i)
+		items[i] = new Label(lineHeight, std::move(dirs[i]), &Program::eventBrowserGoIn, nullptr, nullptr, nullptr, Alignment::left, World::drawSys()->texture("folder"));
+	for (sizet i = 0; i < files.size(); ++i)
+		items[dirs.size()+i] = new Label(lineHeight, std::move(files[i]), &Program::eventBrowserGoFile, nullptr, nullptr, nullptr, Alignment::left, World::drawSys()->texture("file"));
 
 	// main content
 	vector<Widget*> mid = {
@@ -275,7 +280,7 @@ uptr<RootLayout> ProgPageBrowser::createLayout() {
 
 	// root layout
 	vector<Widget*> cont = {
-		new LabelEdit(lineHeight, World::browser()->getRootDir() != topDir ? relativePath(World::browser()->getCurDir(), World::sets()->getDirLib()).u8string() : World::browser()->getCurDir().u8string(), &Program::eventBrowserGoTo),
+		new LabelEdit(lineHeight, World::browser()->getRootDir() != Browser::topDir ? relativePath(World::browser()->getCurDir(), World::sets()->getDirLib()).u8string() : World::browser()->getCurDir().u8string(), &Program::eventBrowserGoTo),
 		new Layout(1.f, std::move(mid), Direction::right, Layout::Select::none, topSpacing)
 	};
 	return std::make_unique<RootLayout>(1.f, std::move(cont), Direction::down, Layout::Select::none, topSpacing);
@@ -427,7 +432,7 @@ uptr<RootLayout> ProgDownloader::createLayout() {
 		new Label(exit.length, std::move(exit.text), &Program::eventTryExit),
 		new Widget(),
 		new Label(downloads.length, std::move(downloads.text), &Program::eventOpenDownloadList),
-		new ComboBox(findMaxLength(wsrcs.begin(), wsrcs.end(), topHeight), World::downloader()->getSource()->name(), std::move(wsrcs), &Program::eventSwitchSource, nullptr, Label::Alignment::center)
+		new ComboBox(findMaxLength(wsrcs.begin(), wsrcs.end(), topHeight), World::downloader()->getSource()->name(), std::move(wsrcs), &Program::eventSwitchSource, nullptr, Alignment::center)
 	};
 
 	// download button and bar
@@ -472,7 +477,7 @@ uptr<RootLayout> ProgDownloader::createLayout() {
 
 Comic ProgDownloader::curInfo() const {
 	Comic info(static_cast<LabelEdit*>(*results->getSelected().begin())->getText(), vector<pairStr>(chapterUrls.size()));
-	for (sizet i = 0; i < chapterUrls.size(); i++)
+	for (sizet i = 0; i < chapterUrls.size(); ++i)
 		info.chapters[i] = pair(static_cast<Label*>(static_cast<Layout*>(chapters->getWidget(i))->getWidget(1))->getText(), chapterUrls[i]);
 	return info;
 }
@@ -480,7 +485,7 @@ Comic ProgDownloader::curInfo() const {
 void ProgDownloader::printResults(vector<pairStr>&& comics) {
 	resultUrls.resize(comics.size());
 	vector<Widget*> wgts(comics.size());
-	for (sizet i = 0; i < wgts.size(); i++) {
+	for (sizet i = 0; i < wgts.size(); ++i) {
 		wgts[i] = new Label(TileBox::defaultItemHeight, std::move(comics[i].first), &Program::eventShowComicInfo, nullptr, &Program::eventDownloadComic);
 		resultUrls[i] = std::move(comics[i].second);
 	}
@@ -490,7 +495,7 @@ void ProgDownloader::printResults(vector<pairStr>&& comics) {
 void ProgDownloader::printInfo(vector<pairStr>&& chaps) {
 	chapterUrls.resize(chaps.size());
 	vector<Widget*> wgts(chaps.size());
-	for (sizet i = 0; i < wgts.size(); i++) {
+	for (sizet i = 0; i < wgts.size(); ++i) {
 		vector<Widget*> line = {
 			new CheckBox(TileBox::defaultItemHeight, true),
 			new Label(1.f, std::move(chaps[i].first), &Program::eventSelectChapter, nullptr, &Program::eventDownloadChapter)
@@ -537,9 +542,9 @@ uptr<RootLayout> ProgDownloads::createLayout() {
 	};
 
 	// queue list
-	while (SDL_TryLockMutex(World::downloader()->queueLock));
+	World::downloader()->queueLock.lock();
 	vector<Widget*> lse(World::downloader()->getDlQueue().size());
-	for (sizet i = 0; i < lse.size(); i++) {
+	for (sizet i = 0; i < lse.size(); ++i) {
 		vector<Widget*> ln = {
 			new Label(1.f, World::downloader()->getDlQueue()[i].title + " - waiting"),
 			new Label(TileBox::defaultItemHeight, "X", &Program::eventDownloadDelete)
@@ -548,7 +553,7 @@ uptr<RootLayout> ProgDownloads::createLayout() {
 	}
 	if (!lse.empty())
 		static_cast<Label*>(static_cast<Layout*>(lse[0])->getWidget(0))->setText(World::downloader()->getDlQueue()[0].title + " - " + to_string(World::downloader()->getDlProg().x) + '/' + to_string(World::downloader()->getDlProg().y));
-	SDL_UnlockMutex(World::downloader()->queueLock);
+	World::downloader()->queueLock.unlock();
 
 	// main content
 	vector<Widget*> mid = {
@@ -590,7 +595,9 @@ void ProgSettings::eventFileDrop(const fs::path& file) {
 		try {
 			if (fs::is_directory(file))
 				World::sets()->setDirLib(file, World::fileSys()->getDirSets());
-		} catch (...) {}
+		} catch (const std::runtime_error& err) {
+			std::cerr << err.what() << std::endl;
+		}
 	}
 }
 
@@ -631,7 +638,7 @@ uptr<RootLayout> ProgSettings::createLayout() {
 	};
 	initlist<const char*>::iterator itxs = txs.begin();
 	array<string, Binding::names.size()> bnames;
-	for (sizet i = 0; i < Binding::names.size(); i++)
+	for (sizet i = 0; i < Binding::names.size(); ++i)
 		bnames[i] = firstUpper(Binding::names[i]);
 	int descLength = std::max(findMaxLength(txs.begin(), txs.end(), lineHeight), findMaxLength(bnames.begin(), bnames.end(), lineHeight));
 
@@ -642,9 +649,11 @@ uptr<RootLayout> ProgSettings::createLayout() {
 	constexpr char tipDeadzon[] = "Controller axis deadzone";
 
 	// action fields for labels
+	SDL_RendererInfo rendererInfo;
 	vector<string> renderers((sizet(SDL_GetNumRenderDrivers())));
-	for (sizet i = 0; i < renderers.size(); i++)
-		renderers[i] = getRendererName(int(i));
+	for (sizet i = 0; i < renderers.size(); ++i)
+		if (!SDL_GetRenderDriverInfo(int(i), &rendererInfo))
+			renderers[i] = rendererInfo.name;
 	vector<string> themes = World::fileSys()->getAvailableThemes();
 	vector<string> directs(Direction::names.begin(), Direction::names.end());
 	vector<string> plims(PicLim::names.begin(), PicLim::names.end());
@@ -684,7 +693,7 @@ uptr<RootLayout> ProgSettings::createLayout() {
 	}, {
 		new Label(descLength, *itxs++),
 		new LabelEdit(1.f, World::sets()->getDirLib().u8string(), &Program::eventSetLibraryDirLE, nullptr, nullptr, makeTooltip("Library path")),
-		new Label(dots.length, std::move(dots.text), &Program::eventOpenLibDirBrowser, nullptr, nullptr, makeTooltip("Browse for library"), Label::Alignment::center)
+		new Label(dots.length, std::move(dots.text), &Program::eventOpenLibDirBrowser, nullptr, nullptr, makeTooltip("Browse for library"), Alignment::center)
 	}, {
 		new Label(descLength, *itxs++),
 		new ComboBox(1.f, World::sets()->renderer, std::move(renderers), &Program::eventSetRenderer, makeTooltip("Graphics renderer"))
@@ -698,13 +707,13 @@ uptr<RootLayout> ProgSettings::createLayout() {
 	} };
 	sizet lcnt = txs.size();
 	vector<Widget*> lns(lcnt + 1 + bnames.size() + 2);
-	for (sizet i = 0; i < lcnt; i++)
+	for (sizet i = 0; i < lcnt; ++i)
 		lns[i] = new Layout(lineHeight, std::move(lx[i]), Direction::right);
 	lns[lcnt] = new Widget(0);
 	limitLine = static_cast<Layout*>(lns[3]);
 
 	// shortcut entries
-	for (sizet i = 0; i < bnames.size(); i++) {
+	for (sizet i = 0; i < bnames.size(); ++i) {
 		Label* lbl = new Label(descLength, std::move(bnames[i]));
 		vector<Widget*> lin {
 			lbl,
@@ -734,7 +743,7 @@ Widget* ProgSettings::createLimitEdit() {
 	case PicLim::Type::count:
 		return new LabelEdit(1.f, to_string(World::sets()->picLim.getCount()), &Program::eventSetPicLimCount, nullptr, nullptr, makeTooltip("Number of pictures per batch"), LabelEdit::TextType::uInt);
 	case PicLim::Type::size:
-		return new LabelEdit(1.f, memoryString(World::sets()->picLim.getSize()), &Program::eventSetPicLimSize, nullptr, nullptr, makeTooltip("Total size of pictures per batch"));
+		return new LabelEdit(1.f, PicLim::memoryString(World::sets()->picLim.getSize()), &Program::eventSetPicLimSize, nullptr, nullptr, makeTooltip("Total size of pictures per batch"));
 	}
 	return new Widget();
 }
@@ -769,8 +778,8 @@ uptr<RootLayout> ProgSearchDir::createLayout() {
 	// directory list
 	vector<fs::path> strs = FileSys::listDir(World::browser()->getCurDir(), false, true, World::sets()->showHidden);
 	vector<Widget*> items(strs.size());
-	for (sizet i = 0; i < strs.size(); i++)
-		items[i] = new Label(lineHeight, strs[i].u8string(), nullptr, nullptr, &Program::eventBrowserGoIn, nullptr, Label::Alignment::left, World::drawSys()->texture("folder"));
+	for (sizet i = 0; i < strs.size(); ++i)
+		items[i] = new Label(lineHeight, strs[i].u8string(), nullptr, nullptr, &Program::eventBrowserGoIn, nullptr, Alignment::left, World::drawSys()->texture("folder"));
 
 	// main content
 	vector<Widget*> mid = {

@@ -1,12 +1,18 @@
 #include "windowSys.h"
-
-WindowSys::WindowSys() :
-	window(nullptr),
-	dSec(0.f),
-	run(true)
-{}
+#include "drawSys.h"
+#include "fileSys.h"
+#include "inputSys.h"
+#include "scene.h"
+#include "prog/program.h"
+#include "prog/progs.h"
 
 int WindowSys::start() {
+	fileSys = nullptr;
+	inputSys = nullptr;
+	program = nullptr;
+	scene = nullptr;
+	sets = nullptr;
+	window = nullptr;
 	int rc = EXIT_SUCCESS;
 	try {
 		init();
@@ -22,11 +28,12 @@ int WindowSys::start() {
 		rc = EXIT_FAILURE;
 #endif
 	}
-	program.reset();
-	scene.reset();
-	inputSys.reset();
+	delete program;
+	delete scene;
+	delete inputSys;
 	destroyWindow();
-	fileSys.reset();
+	delete fileSys;
+	delete sets;
 
 	IMG_Quit();
 	TTF_Quit();
@@ -56,9 +63,6 @@ void WindowSys::init() {
 	SDL_SetHint(SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH, "1");
 #endif
 	SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-	SDL_EventState(SDL_DISPLAYEVENT, SDL_DISABLE);
-#endif
 	SDL_EventState(SDL_TEXTEDITING, SDL_DISABLE);
 	SDL_EventState(SDL_KEYMAPCHANGED, SDL_DISABLE);
 	SDL_EventState(SDL_JOYBALLMOTION, SDL_DISABLE);
@@ -73,19 +77,20 @@ void WindowSys::init() {
 	SDL_EventState(SDL_DROPCOMPLETE, SDL_DISABLE);
 	SDL_EventState(SDL_AUDIODEVICEADDED, SDL_DISABLE);
 	SDL_EventState(SDL_AUDIODEVICEREMOVED, SDL_DISABLE);
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-	SDL_EventState(SDL_SENSORUPDATE, SDL_DISABLE);
-#endif
 	SDL_EventState(SDL_RENDER_TARGETS_RESET, SDL_DISABLE);
 	SDL_EventState(SDL_RENDER_DEVICE_RESET, SDL_DISABLE);
+#if SDL_VERSION_ATLEAST(2, 0, 9)
+	SDL_EventState(SDL_DISPLAYEVENT, SDL_DISABLE);
+	SDL_EventState(SDL_SENSORUPDATE, SDL_DISABLE);
+#endif
 	SDL_StopTextInput();
 
-	fileSys = std::make_unique<FileSys>();
-	sets.reset(fileSys->loadSettings());
+	fileSys = new FileSys;
+	sets = fileSys->loadSettings();
 	createWindow();
-	inputSys = std::make_unique<InputSys>();
-	scene = std::make_unique<Scene>();
-	program = std::make_unique<Program>();
+	inputSys = new InputSys;
+	scene = new Scene;
+	program = new Program;
 	program->start();
 }
 
@@ -95,19 +100,19 @@ void WindowSys::exec() {
 		dSec = float(newTime - oldTime) / ticksPerSec;
 		oldTime = newTime;
 
-		drawSys->drawWidgets(scene.get(), inputSys->mouseLast);
+		drawSys->drawWidgets(scene, inputSys->mouseLast);
 		inputSys->tick();
 		scene->tick(dSec);
 
+		SDL_Event event;
 		uint32 timeout = SDL_GetTicks() + eventCheckTimeout;
 		do {
-			SDL_Event event;
 			if (!SDL_PollEvent(&event))
 				break;
 			handleEvent(event);
-		} while (SDL_GetTicks() < timeout);
+		} while (!SDL_TICKS_PASSED(SDL_GetTicks(), timeout));
 	}
-	fileSys->saveSettings(sets.get());
+	fileSys->saveSettings(sets);
 	fileSys->saveBindings(inputSys->getBindings());
 }
 
@@ -116,7 +121,7 @@ void WindowSys::createWindow() {
 
 	// create new window
 	sets->resolution = clamp(sets->resolution, windowMinSize, displayResolution());
-	if (!(window = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, sets->resolution.x, sets->resolution.y, SDL_WINDOW_RESIZABLE | (sets->maximized ? SDL_WINDOW_MAXIMIZED : 0) | (sets->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0))))
+	if (window = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, sets->resolution.x, sets->resolution.y, SDL_WINDOW_RESIZABLE | (sets->maximized ? SDL_WINDOW_MAXIMIZED : 0) | (sets->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0)); !window)
 		throw std::runtime_error(string("Failed to create window:\n") + SDL_GetError());
 
 	// visual stuff
@@ -124,16 +129,15 @@ void WindowSys::createWindow() {
 		SDL_SetWindowIcon(window, icon);
 		SDL_FreeSurface(icon);
 	}
-	drawSys = std::make_unique<DrawSys>(window, sets->getRendererIndex(), sets.get(), fileSys.get());
+	drawSys = new DrawSys(window, sets->getRendererInfo(), sets, fileSys);
 	SDL_SetWindowMinimumSize(window, windowMinSize.x, windowMinSize.y);	// for some reason this function has to be called after the renderer is created
 }
 
 void WindowSys::destroyWindow() {
-	if (window) {
-		drawSys.reset();
-		SDL_DestroyWindow(window);
-		window = nullptr;
-	}
+	delete drawSys;
+	drawSys = nullptr;
+	SDL_DestroyWindow(window);
+	window = nullptr;
 }
 
 void WindowSys::handleEvent(const SDL_Event& event) {
@@ -205,8 +209,9 @@ void WindowSys::handleEvent(const SDL_Event& event) {
 void WindowSys::eventWindow(const SDL_WindowEvent& winEvent) {
 	switch (winEvent.event) {
 	case SDL_WINDOWEVENT_RESIZED:
-		if (uint32 flags = SDL_GetWindowFlags(window); !(flags & SDL_WINDOW_FULLSCREEN_DESKTOP) && !(sets->maximized = flags & SDL_WINDOW_MAXIMIZED))	// update settings if needed
-			SDL_GetWindowSize(window, &sets->resolution.x, &sets->resolution.y);
+		if (uint32 flags = SDL_GetWindowFlags(window); !(flags & SDL_WINDOW_FULLSCREEN_DESKTOP))
+			if (sets->maximized = flags & SDL_WINDOW_MAXIMIZED; !sets->maximized)
+				SDL_GetWindowSize(window, &sets->resolution.x, &sets->resolution.y);
 	case SDL_WINDOWEVENT_SIZE_CHANGED:
 		scene->onResize();
 		break;
@@ -248,7 +253,8 @@ void WindowSys::setRenderer(const string& name) {
 }
 
 void WindowSys::resetSettings() {
-	sets = std::make_unique<Settings>(fileSys->getDirSets(), fileSys->getAvailableThemes());
+	delete sets;
+	sets = new Settings(fileSys->getDirSets(), fileSys->getAvailableThemes());
 	createWindow();
 	scene->resetLayouts();
 }

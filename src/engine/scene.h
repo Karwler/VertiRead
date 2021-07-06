@@ -14,8 +14,8 @@ struct ClickStamp {
 // handles more back-end UI interactions, works with widgets (UI elements), and contains Program and Library
 class Scene {
 public:
-	Widget* select;		// currently selected widget
-	Widget* capture;	// either pointer to widget currently hogging all keyboard input or ScrollArea which's slider is currently being dragged. nullptr if nothing is being captured or dragged
+	Widget* select = nullptr;	// currently selected widget
+	Widget* capture = nullptr;	// either pointer to widget currently hogging all keyboard input or ScrollArea which's slider is currently being dragged. nullptr if nothing is being captured or dragged
 private:
 	uptr<RootLayout> layout;
 	uptr<Popup> popup;
@@ -27,8 +27,6 @@ private:
 	static constexpr int scrollFactorWheel = 140;
 
 public:
-	Scene();
-
 	void tick(float dSec);
 	void onMouseMove(ivec2 mPos, ivec2 mMov);
 	void onMouseDown(ivec2 mPos, uint8 mBut, uint8 mCnt);
@@ -50,14 +48,14 @@ public:
 	void updateSelect();
 	void updateSelect(ivec2 mPos);
 	void selectFirst();
-	sizet findSelectedID(Layout* box);	// get id of possibly select or selects parent in relation to box
-	bool cursorDisableable();
+	sizet findSelectedID(Layout* box) const;	// get id of possibly select or selects parent in relation to box
+	bool cursorDisableable() const;
 	bool cursorInClickRange(ivec2 mPos, uint8 mBut);
 
 private:
 	Widget* getSelected(ivec2 mPos);
 	ScrollArea* getSelectedScrollArea() const;
-	bool overlayFocused(ivec2 mPos);
+	bool overlayFocused(ivec2 mPos) const;
 };
 
 inline RootLayout* Scene::getLayout() {
@@ -85,5 +83,5 @@ inline void Scene::updateSelect(ivec2 mPos) {
 }
 
 inline bool Scene::cursorInClickRange(ivec2 mPos, uint8 mBut) {
-	return vec2(mPos - stamps[mBut-1].mPos).length() <= clickMoveThreshold;
+	return glm::length(vec2(mPos - stamps[mBut-1].mPos)) <= clickMoveThreshold;
 }

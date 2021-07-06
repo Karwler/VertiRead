@@ -5,7 +5,7 @@
 // handles input events and contains controls settings
 class InputSys {
 public:
-	bool mouseLast;		// last input was mouse or touch
+	bool mouseLast = false;		// last input was mouse or touch
 
 private:
 	struct Controller {
@@ -20,8 +20,8 @@ private:
 
 	vector<Controller> controllers;	// currently connected game controllers
 	array<Binding, Binding::names.size()> bindings;
-	ivec2 mouseMove;				// last mouse motion
-	uint32 moveTime;				// timestamp of last recorded mouseMove
+	ivec2 mouseMove = { 0, 0 };		// last mouse motion
+	uint32 moveTime = 0;			// timestamp of last recorded mouseMove
 
 public:
 	InputSys();
@@ -31,12 +31,12 @@ public:
 	void eventMouseButtonDown(const SDL_MouseButtonEvent& button, bool mouse = true);
 	void eventMouseButtonUp(const SDL_MouseButtonEvent& button, bool mouse = true);
 	void eventMouseWheel(const SDL_MouseWheelEvent& wheel);
-	void eventKeypress(const SDL_KeyboardEvent& key);
-	void eventJoystickButton(const SDL_JoyButtonEvent& jbutton);
-	void eventJoystickHat(const SDL_JoyHatEvent& jhat);
-	void eventJoystickAxis(const SDL_JoyAxisEvent& jaxis);
-	void eventGamepadButton(const SDL_ControllerButtonEvent& gbutton);
-	void eventGamepadAxis(const SDL_ControllerAxisEvent& gaxis);
+	void eventKeypress(const SDL_KeyboardEvent& key) const;
+	void eventJoystickButton(const SDL_JoyButtonEvent& jbutton) const;
+	void eventJoystickHat(const SDL_JoyHatEvent& jhat) const;
+	void eventJoystickAxis(const SDL_JoyAxisEvent& jaxis) const;
+	void eventGamepadButton(const SDL_ControllerButtonEvent& gbutton) const;
+	void eventGamepadAxis(const SDL_ControllerAxisEvent& gaxis) const;
 	void eventFingerMove(const SDL_TouchFingerEvent& fin);
 	void eventFingerDown(const SDL_TouchFingerEvent& fin);
 	void eventFingerUp(const SDL_TouchFingerEvent& fin);

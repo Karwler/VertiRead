@@ -1,12 +1,12 @@
 #pragma once
 
-#include "fileSys.h"
-#include "utils/layouts.h"
+#include "utils/settings.h"
 #if defined(_WIN32) || defined(APPIMAGE)
 #include <SDL_ttf.h>
 #else
 #include <SDL2/SDL_ttf.h>
 #endif
+#include <mutex>
 
 // loads different font sizes from one file
 class FontSet {
@@ -31,17 +31,21 @@ private:
 	TTF_Font* addSize(int size);
 };
 
+inline FontSet::~FontSet() {
+	clear();
+}
+
 // data needed to load pictures
 struct PictureLoader {
-	DrawSys* drawSys;
-	vector<Texture> pics;
+	vector<pair<string, SDL_Surface*>> pics;
 	string progVal, progLim;
 	fs::path curDir;
 	string firstPic;
 	PicLim picLim;
 	bool fwd, showHidden;
 
-	PictureLoader(DrawSys* drawer, fs::path cdrc, string pfirst, const PicLim& plim, bool forward, bool hidden);
+	PictureLoader(fs::path cdrc, string pfirst, const PicLim& plim, bool forward, bool hidden);
+	~PictureLoader();
 
 	string limitToStr(uptrt i, uptrt c, uptrt m, sizet mag) const;
 };
@@ -54,13 +58,12 @@ private:
 	static constexpr SDL_Color colorPopupDim = { 0, 0, 0, 127 };
 
 	SDL_Renderer* renderer;
-	SDL_mutex* rendLock;									// lock before using renderer
-	array<SDL_Color, FileSys::defaultColors.size()> colors;	// use Color as index
+	array<SDL_Color, Settings::defaultColors.size()> colors;	// use Color as index
 	FontSet fonts;
 	umap<string, SDL_Texture*> texes;	// name, texture data
 
 public:
-	DrawSys(SDL_Window* window, int driverIndex, Settings* sets, const FileSys* fileSys);
+	DrawSys(SDL_Window* window, pair<int, uint32> info, Settings* sets, const FileSys* fileSys);
 	~DrawSys();
 
 	Rect viewport() const;
@@ -70,6 +73,7 @@ public:
 	void setFont(const string& font, Settings* sets, const FileSys* fileSys);
 	void clearFonts();
 	SDL_Texture* texture(const string& name) const;
+	vector<Texture> transferPictures(vector<pair<string, SDL_Surface*>>& pics);
 
 	void drawWidgets(Scene* scene, bool mouseLast);
 	void drawPicture(const Picture* wgt);
@@ -84,13 +88,11 @@ public:
 
 	SDL_Texture* renderText(const char* text, int height);
 	SDL_Texture* renderText(const char* text, int height, uint length);
-	static int loadTexturesDirectoryThreaded(void* data);
-	static int loadTexturesArchiveThreaded(void* data);
+	static void loadTexturesDirectoryThreaded(bool* running, uptr<PictureLoader> pl);
+	static void loadTexturesArchiveThreaded(bool* running, uptr<PictureLoader> pl);
 private:
-	SDL_Texture* loadArchiveTexture(archive* arch, archive_entry* entry);
-	static sizet initLoadLimits(PictureLoader* pl, vector<fs::path>& files, uptrt& lim, uptrt& mem);
-	static mapFiles initLoadLimits(PictureLoader* pl, uptrt& start, uptrt& end, uptrt& lim, uptrt& mem);
-	static uptrt texMemory(SDL_Texture* tex);
+	static sizet initLoadLimits(const PictureLoader* pl, vector<fs::path>& files, uptrt& lim, uptrt& mem);
+	static mapFiles initLoadLimits(const PictureLoader* pl, uptrt& start, uptrt& end, uptrt& lim, uptrt& mem);
 
 	void drawRect(const Rect& rect, Color color);
 	void drawText(SDL_Texture* tex, const Rect& rect, const Rect& frame);

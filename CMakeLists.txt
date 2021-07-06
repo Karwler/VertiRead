@@ -8,6 +8,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWER)
+
 # source files
 set(SRC_FILES
 	"src/engine/drawSys.cpp"
@@ -63,6 +65,7 @@ endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
 	option(APPIMAGE "Package as an AppImage." OFF)
 endif()
+option(USE_SVG "Use SVG instead of PNG icons." OFF)
 
 function(downloadLib URL LIBDIR ORIG_LIBDIR)
 	if(EXISTS "${LIBDIR}")
@@ -109,7 +112,6 @@ include_directories("${CMAKE_SOURCE_DIR}/src" "${DIR_LIB}/glm")
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 	set(PBOUT_DIR "${CMAKE_BINARY_DIR}/${PROJECT_NAME}")
 	set(DATA_DIR "${PBOUT_DIR}")
-	set(FONTS_DIR "${PBOUT_DIR}")
 	set(ICONS_DIR "${PBOUT_DIR}/icons")
 	set(LICN_DIR "${PBOUT_DIR}/licenses")
 	set(LIBS_DIR "${PBOUT_DIR}")
@@ -206,10 +208,9 @@ else()
 	if(APPIMAGE)
 		set(PBOUT_DIR "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.AppDir")
 	else()
-		set(PBOUT_DIR "${CMAKE_BINARY_DIR}/${PROJECT_NAME}")
+		set(PBOUT_DIR "${CMAKE_BINARY_DIR}/${PROJECT_NAME_LOWER}")
 	endif()
-	set(DATA_DIR "${PBOUT_DIR}/share")
-	set(FONTS_DIR "${DATA_DIR}/fonts")
+	set(DATA_DIR "${PBOUT_DIR}/share/${PROJECT_NAME_LOWER}")
 	set(ICONS_DIR "${DATA_DIR}/icons")
 	set(LICN_DIR "${DATA_DIR}/licenses")
 	set(LIBS_DIR "${PBOUT_DIR}/lib")
@@ -274,7 +275,7 @@ if((CMAKE_CXX_COMPILER_ID MATCHES "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "Clan
 		set(FLG_RELEASE "${FLG_RELEASE} -flto -fuse-linker-plugin -s")
 		set(CXX_FLG_ANY "${CXX_FLG_ANY} -Wcast-align=strict -Wduplicated-cond -Wlogical-op -Wuseless-cast")
 	else()
-		set(CXX_FLG_ANY "${CXX_FLG_ANY} -Wcast-align -Wnull-dereference -Wshadow-all")
+		set(CXX_FLG_ANY "${CXX_FLG_ANY} -Wcast-align -Wnull-dereference -Wshadow-all -Wno-final-dtor-non-final-class")
 	endif()
 elseif(MSVC)
 	set(CXX_FLG_ANY "/W4 /wd4100 /wd4201 /wd4244 /wd4458 /wd4706 /wd4805")
@@ -294,6 +295,9 @@ endif()
 # set main target
 add_executable(${PROJECT_NAME} WIN32 ${SRC_FILES})
 target_link_libraries(${PROJECT_NAME} SDL2 SDL2_image SDL2_ttf archive)
+if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+	target_link_libraries(${PROJECT_NAME} pthread dl)
+endif()
 if(DOWNLOADER)
 	if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 		target_link_libraries(${PROJECT_NAME} libcurl libxml2)
@@ -309,26 +313,25 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 						RUNTIME_OUTPUT_DIRECTORY_DEBUG "${EXECUTABLE_OUTPUT_PATH}"
 						RUNTIME_OUTPUT_DIRECTORY_RELEASE "${EXECUTABLE_OUTPUT_PATH}")
 if(NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
-	string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWER)
 	set_target_properties(${PROJECT_NAME} PROPERTIES
 							OUTPUT_NAME ${PROJECT_NAME_LOWER})
 endif()
 
 # build commands
-find_program(PYTHON "python3" NAMES "python")
-add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
-					COMMAND "${PYTHON}" "${CMAKE_SOURCE_DIR}/pictool.py" "${DIR_RSC}/vertiread.svg")
-
+if(USE_SVG)
+	set(ICO_EXT "svg")
+else()
+	set(ICO_EXT "png")
+endif()
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 					COMMAND "${CMAKE_COMMAND}" -E make_directory "${ICONS_DIR}"
-					COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DIR_RSC}/fonts" "${FONTS_DIR}"
 					COMMAND "${CMAKE_COMMAND}" -E copy_directory "${DIR_RSC}/licenses" "${LICN_DIR}"
-					COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_RSC}/themes.ini" "${DATA_DIR}"
+					COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_RSC}/BrisaSans.otf" "${DIR_RSC}/themes.ini" "${DATA_DIR}"
 					COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_LIB}/glm/copying.txt" "${LICN_DIR}/COPYING.glm.txt"
-					COMMAND "${PYTHON}" "${CMAKE_SOURCE_DIR}/pictool.py" "${ICONS_DIR}" "${DIR_ICN}/center.svg" "${DIR_ICN}/cross.svg" "${DIR_ICN}/file.svg" "${DIR_ICN}/folder.svg" "${DIR_ICN}/left.svg" "${DIR_ICN}/minus.svg" "${DIR_ICN}/plus.svg" "${DIR_ICN}/reset.svg" "${DIR_ICN}/right.svg" "${DIR_ICN}/search.svg")
+					COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_ICN}/center.${ICO_EXT}" "${DIR_ICN}/cross.${ICO_EXT}" "${DIR_ICN}/file.${ICO_EXT}" "${DIR_ICN}/folder.${ICO_EXT}" "${DIR_ICN}/left.${ICO_EXT}" "${DIR_ICN}/minus.${ICO_EXT}" "${DIR_ICN}/plus.${ICO_EXT}" "${DIR_ICN}/reset.${ICO_EXT}" "${DIR_ICN}/right.${ICO_EXT}" "${DIR_ICN}/search.${ICO_EXT}" "${ICONS_DIR}")
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-						COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_RSC}/vertiread.png" "${DATA_DIR}"
+						COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_RSC}/vertiread.${ICO_EXT}" "${DATA_DIR}"
 						COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BIN_ARC}/archive.dll" "${BIN_SDL}/SDL2.dll" "${BIN_IMG}/SDL2_image.dll" "${BIN_IMG}/libjpeg-9.dll" "${BIN_IMG}/libpng16-16.dll" "${BIN_IMG}/libtiff-5.dll" "${BIN_IMG}/libwebp-7.dll" "${BIN_TTF}/SDL2_ttf.dll" "${BIN_TTF}/libfreetype-6.dll" "${BIN_TTF}/zlib1.dll" "${LIBS_DIR}"
 						COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BIN_IMG}/LICENSE.jpeg.txt" "${BIN_IMG}/LICENSE.png.txt" "${BIN_IMG}/LICENSE.tiff.txt" "${BIN_IMG}/LICENSE.webp.txt" "${BIN_TTF}/LICENSE.freetype.txt" "${BIN_TTF}/LICENSE.zlib.txt" "${LICN_DIR}"
 						COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${LIC_SDL}/COPYING.txt" "${LICN_DIR}/COPYING.SDL.txt"
@@ -391,8 +394,26 @@ else()
 		endif()
 	else()
 		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-							COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_RSC}/vertiread.png" "${DATA_DIR}")
+							COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DIR_RSC}/vertiread.${ICO_EXT}" "${DATA_DIR}")
 	endif()
+endif()
+
+# install target
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+	set(DST_DIR "${CMAKE_INSTALL_PREFIX}/${PROJECT_NAME}")
+	install(TARGETS ${PROJECT_NAME} DESTINATION "${DST_DIR}")
+	install(DIRECTORY "${ICONS_DIR}" DESTINATION "${DST_DIR}")
+	install(FILES "${DATA_DIR}/BrisaSans.otf" "${DATA_DIR}/themes.ini" "${PBOUT_DIR}/vertiread.png" DESTINATION "${DST_DIR}")
+	install(DIRECTORY "${LICN_DIR}" DESTINATION "${DST_DIR}")
+	install(FILES "${PBOUT_DIR}/archive.dll" "${PBOUT_DIR}/libfreetype-6.dll" "${PBOUT_DIR}/libjpeg-9.dll" "${PBOUT_DIR}/libpng16-16.dll" "${PBOUT_DIR}/libtiff-5.dll" "${PBOUT_DIR}/libwebp-7.dll" "${PBOUT_DIR}/SDL2.dll" "${PBOUT_DIR}/SDL2_image.dll" "${PBOUT_DIR}/SDL2_ttf.dll" "${PBOUT_DIR}/zlib1.dll" DESTINATION "${DST_DIR}")
+elseif(APPIMAGE)
+	install(FILES "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-x86_64.AppImage" DESTINATION "${CMAKE_INSTALL_PREFIX}")
+else()
+	set(DST_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME_LOWER}")
+	install(TARGETS ${PROJECT_NAME} DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
+	install(DIRECTORY "${ICONS_DIR}" DESTINATION "${DST_DIR}")
+	install(FILES "${DATA_DIR}/BrisaSans.otf" "${DATA_DIR}/themes.ini" "${PBOUT_DIR}/vertiread.png" DESTINATION "${DST_DIR}")
+	install(DIRECTORY "${LICN_DIR}" DESTINATION "${DST_DIR}")
 endif()
 
 # group files
